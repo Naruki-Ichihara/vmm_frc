@@ -1,0 +1,23 @@
+services:
+  acsc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_CLAUDE: "true"
+    image: acsc:latest
+    container_name: acsc
+    restart: always
+    tty: true
+    working_dir: /workspace/
+    volumes:
+      - ./:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /mnt/wslg:/mnt/wslg
+    shm_size: 4gb
+    environment:
+      - DISPLAY=$DISPLAY
+      - WAYLAND_DISPLAY=$WAYLAND_DISPLAY
+      - XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
+      - PULSE_SERVER=$PULSE_SERVER
+    ipc: host
