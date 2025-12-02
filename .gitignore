@@ -1,6 +1,7 @@
 data/
 workingspace/
 CLAUDE.md
+.claude
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -36,7 +37,13 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
-!acsc_gui.spec
+!acsc.spec
+
+# Installer output
+installer_output/
+
+# Generated icon file (created from PNG during build)
+assets/*.ico
 
 # Installer logs
 pip-log.txt
