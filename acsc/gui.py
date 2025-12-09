@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QCheckBox, QRadioButton, QSlider, QDoubleSpinBox, QStackedWidget,
                                QButtonGroup, QFrame, QScrollArea, QTabWidget,
                                QToolBar, QSizePolicy, QSplitter, QDialog)
-from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide6.QtCore import Qt, QThread, Signal, QSize, QTimer
 from PySide6.QtGui import QFont, QPalette, QColor, QAction, QIcon
 import cv2 as cv
 from acsc.io import import_image_sequence, trim_image
@@ -217,7 +217,19 @@ class ImportDialog(QWidget):
 
             for ext in image_extensions:
                 image_files.extend(sorted(path.glob(f"*{ext}")))
-                image_files.extend(sorted(path.glob(f"*{ext.upper()}")))
+                # On case-sensitive filesystems, also check uppercase extensions
+                import os
+                if os.name != 'nt':  # Not Windows
+                    image_files.extend(sorted(path.glob(f"*{ext.upper()}")))
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_files = []
+            for f in image_files:
+                if f not in seen:
+                    seen.add(f)
+                    unique_files.append(f)
+            image_files = unique_files
 
             if image_files:
                 # Take first image file to analyze pattern
@@ -1016,6 +1028,165 @@ class HistogramPanel(QWidget):
         self.figure.tight_layout()
         self.canvas.draw()
 
+    def plotTrajectoryHistogram(self, config, angle_data):
+        """Plot trajectory angle histogram based on configuration."""
+        self.figure.clear()
+
+        # Clear stored data for export
+        self.histogram_data = {}
+        self.statistics_data = {}
+        self.current_config = config
+
+        # Update title
+        self.title_label.setText("Fiber Trajectory Angle Histogram")
+
+        # Determine number of subplots needed
+        plots_needed = sum([
+            config['angles'].get('tilt', False) and angle_data.get('tilt') is not None,
+            config['angles'].get('azimuth', False) and angle_data.get('azimuth') is not None
+        ])
+
+        if plots_needed == 0:
+            self.stats_text.setText("No angle data available for selected options.")
+            return
+
+        # Create subplots
+        axes = []
+        for i in range(plots_needed):
+            ax = self.figure.add_subplot(plots_needed, 1, i+1)
+            axes.append(ax)
+
+        # Plot counter
+        plot_idx = 0
+        stats_text = "Fiber Trajectory Statistical Analysis:\n" + "="*40 + "\n\n"
+
+        # Plot tilt angle histogram
+        if config['angles'].get('tilt', False) and angle_data.get('tilt') is not None:
+            data = angle_data['tilt']
+            if len(data) > 0:
+                ax = axes[plot_idx]
+                data_flat = np.array(data).flatten()
+                # Remove NaN values
+                data_flat = data_flat[~np.isnan(data_flat)]
+
+                if len(data_flat) > 0:
+                    # Determine range
+                    if config['auto_range']:
+                        hist_range = (np.min(data_flat), np.max(data_flat))
+                    else:
+                        hist_range = config['range']
+
+                    # Plot histogram
+                    n, bins, patches = ax.hist(data_flat, bins=config['bins'],
+                                              range=hist_range, color='#1f77b4',
+                                              alpha=0.7, edgecolor='black')
+
+                    ax.set_title('Tilt Angle (from fiber axis)', fontsize=12)
+                    ax.set_xlabel('Angle (degrees)', fontsize=10)
+                    ax.set_ylabel('Frequency', fontsize=10)
+                    ax.grid(True, alpha=0.3)
+
+                    # Calculate statistics
+                    mean_val = np.mean(data_flat)
+                    std_val = np.std(data_flat)
+                    cv_val = (std_val / mean_val * 100) if mean_val != 0 else 0
+
+                    # Store data for export
+                    self.histogram_data['Tilt'] = {
+                        'data': data_flat,
+                        'bins': bins,
+                        'counts': n
+                    }
+                    self.statistics_data['Tilt'] = {
+                        'mean': mean_val,
+                        'std': std_val,
+                        'cv': cv_val
+                    }
+
+                    stats_text += "Tilt Angle:\n"
+                    stats_text += f"  N: {len(data_flat)}\n"
+                    if config['statistics']['mean']:
+                        ax.axvline(mean_val, color='red', linestyle='--', linewidth=1.5, label=f'Mean: {mean_val:.2f}°')
+                        stats_text += f"  Mean: {mean_val:.2f}°\n"
+                    if config['statistics']['std']:
+                        stats_text += f"  Std Dev: {std_val:.2f}°\n"
+                    if config['statistics']['cv']:
+                        stats_text += f"  CV: {cv_val:.2f}%\n"
+                    stats_text += f"  Range: [{np.min(data_flat):.2f}°, {np.max(data_flat):.2f}°]\n"
+
+                    if config['statistics']['mean']:
+                        ax.legend(fontsize=9)
+
+                    stats_text += "\n"
+                    plot_idx += 1
+
+        # Plot azimuth angle histogram
+        if config['angles'].get('azimuth', False) and angle_data.get('azimuth') is not None:
+            data = angle_data['azimuth']
+            if len(data) > 0:
+                ax = axes[plot_idx]
+                data_flat = np.array(data).flatten()
+                # Remove NaN values
+                data_flat = data_flat[~np.isnan(data_flat)]
+
+                if len(data_flat) > 0:
+                    # Determine range
+                    if config['auto_range']:
+                        hist_range = (np.min(data_flat), np.max(data_flat))
+                    else:
+                        hist_range = (-180, 180)  # Full azimuth range
+
+                    # Plot histogram
+                    n, bins, patches = ax.hist(data_flat, bins=config['bins'],
+                                              range=hist_range, color='#2ca02c',
+                                              alpha=0.7, edgecolor='black')
+
+                    ax.set_title('Azimuth Angle (in cross-section)', fontsize=12)
+                    ax.set_xlabel('Angle (degrees)', fontsize=10)
+                    ax.set_ylabel('Frequency', fontsize=10)
+                    ax.grid(True, alpha=0.3)
+
+                    # Calculate statistics (circular mean for azimuth)
+                    mean_val = np.mean(data_flat)
+                    std_val = np.std(data_flat)
+                    cv_val = (std_val / abs(mean_val) * 100) if mean_val != 0 else 0
+
+                    # Store data for export
+                    self.histogram_data['Azimuth'] = {
+                        'data': data_flat,
+                        'bins': bins,
+                        'counts': n
+                    }
+                    self.statistics_data['Azimuth'] = {
+                        'mean': mean_val,
+                        'std': std_val,
+                        'cv': cv_val
+                    }
+
+                    stats_text += "Azimuth Angle:\n"
+                    stats_text += f"  N: {len(data_flat)}\n"
+                    if config['statistics']['mean']:
+                        ax.axvline(mean_val, color='red', linestyle='--', linewidth=1.5, label=f'Mean: {mean_val:.2f}°')
+                        stats_text += f"  Mean: {mean_val:.2f}°\n"
+                    if config['statistics']['std']:
+                        stats_text += f"  Std Dev: {std_val:.2f}°\n"
+                    if config['statistics']['cv']:
+                        stats_text += f"  CV: {cv_val:.2f}%\n"
+                    stats_text += f"  Range: [{np.min(data_flat):.2f}°, {np.max(data_flat):.2f}°]\n"
+
+                    if config['statistics']['mean']:
+                        ax.legend(fontsize=9)
+
+                    stats_text += "\n"
+                    plot_idx += 1
+
+        # Update statistics text
+        self.stats_text.setText(stats_text)
+
+        # Adjust layout
+        self.figure.tight_layout()
+        self.canvas.draw()
+
     def hidePanel(self):
         """Hide the histogram panel"""
         # Find the main window
@@ -1107,6 +1278,232 @@ class HistogramPanel(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Export Error",
                                f"Failed to export data:\n{str(e)}")
+
+
+class ModellingHistogramPanel(QWidget):
+    """Histogram panel for Modelling tab - displays fiber trajectory angle histograms (vertical layout)."""
+    def __init__(self):
+        super().__init__()
+        self.figure = Figure(figsize=(4, 6))
+        self.canvas = FigureCanvas(self.figure)
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(3)
+
+        # Header with title and close button
+        header_layout = QHBoxLayout()
+
+        self.title_label = QLabel("Trajectory Histogram")
+        self.title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        header_layout.addWidget(self.title_label)
+
+        header_layout.addStretch()
+
+        self.hide_btn = QPushButton("×")
+        self.hide_btn.setFixedSize(20, 20)
+        self.hide_btn.setStyleSheet("QPushButton { font-weight: bold; }")
+        self.hide_btn.clicked.connect(self.hidePanel)
+        header_layout.addWidget(self.hide_btn)
+
+        layout.addLayout(header_layout)
+
+        # Canvas for matplotlib (vertical layout - stacked plots)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout.addWidget(self.canvas, stretch=3)
+
+        # Statistics display at bottom
+        self.stats_text = QTextEdit()
+        self.stats_text.setReadOnly(True)
+        self.stats_text.setMaximumHeight(120)
+        self.stats_text.setStyleSheet("font-family: monospace; font-size: 10px;")
+        layout.addWidget(self.stats_text, stretch=1)
+
+        # Button layout
+        button_layout = QHBoxLayout()
+        self.export_btn = QPushButton("Export CSV")
+        self.export_btn.clicked.connect(self.exportToCSV)
+        button_layout.addWidget(self.export_btn)
+        layout.addLayout(button_layout)
+
+        self.setMinimumWidth(280)
+        self.setMaximumWidth(400)
+
+        # Store data for export
+        self.histogram_data = {}
+        self.statistics_data = {}
+        self.current_config = {}
+
+    def plotTrajectoryHistogram(self, config, angle_data):
+        """Plot trajectory angle histogram based on configuration."""
+        self.figure.clear()
+
+        # Clear stored data for export
+        self.histogram_data = {}
+        self.statistics_data = {}
+        self.current_config = config
+
+        # Determine number of subplots needed
+        plots_needed = sum([
+            config['angles'].get('tilt', False) and angle_data.get('tilt') is not None,
+            config['angles'].get('azimuth', False) and angle_data.get('azimuth') is not None,
+            config['angles'].get('xz_projection', False) and angle_data.get('xz_projection') is not None,
+            config['angles'].get('yz_projection', False) and angle_data.get('yz_projection') is not None
+        ])
+
+        if plots_needed == 0:
+            self.stats_text.setText("No angle data available for selected options.")
+            return
+
+        # Create subplots (stacked vertically for vertical panel layout)
+        axes = []
+        for i in range(plots_needed):
+            ax = self.figure.add_subplot(plots_needed, 1, i+1)
+            axes.append(ax)
+
+        # Plot counter
+        plot_idx = 0
+        stats_text = "Statistical Analysis:\n" + "="*30 + "\n\n"
+
+        # Helper function to plot a histogram
+        def plot_angle_histogram(data, title, color, key):
+            nonlocal plot_idx, stats_text
+            if data is None or len(data) == 0:
+                return
+            ax = axes[plot_idx]
+            data_flat = np.array(data).flatten()
+            data_flat = data_flat[~np.isnan(data_flat)]
+
+            if len(data_flat) == 0:
+                return
+
+            if config['auto_range']:
+                hist_range = (np.min(data_flat), np.max(data_flat))
+            else:
+                hist_range = config['range']
+
+            n, bins, patches = ax.hist(data_flat, bins=config['bins'],
+                                      range=hist_range, color=color,
+                                      alpha=0.7, edgecolor='black')
+
+            ax.set_title(title, fontsize=10)
+            ax.set_xlabel('Angle (°)', fontsize=9)
+            ax.set_ylabel('Freq', fontsize=9)
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(labelsize=8)
+
+            mean_val = np.mean(data_flat)
+            std_val = np.std(data_flat)
+            cv_val = (std_val / abs(mean_val) * 100) if mean_val != 0 else 0
+
+            self.histogram_data[key] = {
+                'data': data_flat,
+                'bins': bins,
+                'counts': n
+            }
+            self.statistics_data[key] = {
+                'mean': mean_val,
+                'std': std_val,
+                'cv': cv_val
+            }
+
+            stats_text += f"{key}:\n"
+            stats_text += f"  N: {len(data_flat)}\n"
+            if config['statistics']['mean']:
+                ax.axvline(mean_val, color='red', linestyle='--', linewidth=1.5, label=f'Mean: {mean_val:.2f}°')
+                stats_text += f"  Mean: {mean_val:.2f}°\n"
+            if config['statistics']['std']:
+                stats_text += f"  Std: {std_val:.2f}°\n"
+            if config['statistics']['cv']:
+                stats_text += f"  CV: {cv_val:.2f}%\n"
+
+            if config['statistics']['mean']:
+                ax.legend(fontsize=7, loc='upper right')
+
+            stats_text += "\n"
+            plot_idx += 1
+
+        # Plot tilt angle histogram
+        if config['angles'].get('tilt', False) and angle_data.get('tilt') is not None:
+            plot_angle_histogram(angle_data['tilt'], 'Tilt Angle', '#1f77b4', 'Tilt')
+
+        # Plot azimuth angle histogram
+        if config['angles'].get('azimuth', False) and angle_data.get('azimuth') is not None:
+            plot_angle_histogram(angle_data['azimuth'], 'Azimuth Angle', '#2ca02c', 'Azimuth')
+
+        # Plot XZ projection angle histogram
+        if config['angles'].get('xz_projection', False) and angle_data.get('xz_projection') is not None:
+            plot_angle_histogram(angle_data['xz_projection'], 'XZ Projection', '#d62728', 'XZ Proj')
+
+        # Plot YZ projection angle histogram
+        if config['angles'].get('yz_projection', False) and angle_data.get('yz_projection') is not None:
+            plot_angle_histogram(angle_data['yz_projection'], 'YZ Projection', '#9467bd', 'YZ Proj')
+
+        self.stats_text.setText(stats_text)
+        self.figure.tight_layout()
+        self.canvas.draw()
+
+    def hidePanel(self):
+        """Hide the histogram panel."""
+        self.setVisible(False)
+
+    def exportToCSV(self):
+        """Export histogram data and statistics to CSV."""
+        if not self.histogram_data:
+            QMessageBox.warning(self, "No Data", "No histogram data to export.")
+            return
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Histogram Data", "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+
+        if not filename:
+            return
+
+        try:
+            import csv
+            with open(filename, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+
+                # Write header
+                writer.writerow(['Fiber Trajectory Angle Histogram Export'])
+                writer.writerow([])
+
+                for name, data_dict in self.histogram_data.items():
+                    writer.writerow([f'{name} Angle Data'])
+                    writer.writerow(['Bin Start', 'Bin End', 'Count'])
+
+                    bins = data_dict['bins']
+                    counts = data_dict['counts']
+
+                    for i in range(len(counts)):
+                        writer.writerow([f"{bins[i]:.2f}", f"{bins[i+1]:.2f}", int(counts[i])])
+
+                    writer.writerow([])
+
+                    # Statistics
+                    if name in self.statistics_data:
+                        stats = self.statistics_data[name]
+                        data = data_dict['data']
+                        writer.writerow([f'{name} Statistics'])
+                        writer.writerow(['Mean:', f"{stats['mean']:.2f}"])
+                        writer.writerow(['Std Dev:', f"{stats['std']:.2f}"])
+                        writer.writerow(['CV (%):', f"{stats['cv']:.2f}"])
+                        writer.writerow(['Total Points:', len(data)])
+                        writer.writerow(['Min Value:', f"{np.min(data):.2f}"])
+                        writer.writerow(['Max Value:', f"{np.max(data):.2f}"])
+                        writer.writerow([])
+
+            QMessageBox.information(self, "Export Successful",
+                                  f"Histogram data exported to:\n{filename}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error",
+                               f"Failed to export data:\n{str(e)}")
+
 
 class Viewer2D(QWidget):
     """Lightweight 2D slice viewer showing three orthogonal views"""
@@ -1825,6 +2222,9 @@ class Viewer2D(QWidget):
                 # Get data range for normalization (use custom range if set)
                 if self.orientation_range:
                     data_min, data_max = self.orientation_range
+                elif orientation_volume.size == 0:
+                    # Skip if empty volume
+                    continue
                 else:
                     data_min = np.nanmin(orientation_volume)
                     data_max = np.nanmax(orientation_volume)
@@ -3014,6 +3414,18 @@ class VisualizationTab(QWidget):
 
         toolbar_layout.addWidget(export_group)
 
+        # Analysis Group
+        analysis_group = QGroupBox("Analysis")
+        analysis_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        analysis_layout = QHBoxLayout(analysis_group)
+
+        self.trajectory_histogram_btn = RibbonButton("Histogram")
+        self.trajectory_histogram_btn.setEnabled(False)
+        self.trajectory_histogram_btn.clicked.connect(self.openTrajectoryHistogramDialog)
+        analysis_layout.addWidget(self.trajectory_histogram_btn)
+
+        toolbar_layout.addWidget(analysis_group)
+
         toolbar_layout.addStretch()
         layout.addWidget(toolbar)
 
@@ -3264,12 +3676,22 @@ class VisualizationTab(QWidget):
             viewport_layout.addWidget(frame, row, col)
             self.viewport_frames.append({'frame': frame, 'canvas': canvas, 'title': title})
 
+        # Histogram panel (initially hidden, placed between left panel and viewport)
+        self.histogram_panel = ModellingHistogramPanel()
+        self.histogram_panel.setVisible(False)
+        content_splitter.addWidget(self.histogram_panel)
+
         content_splitter.addWidget(viewport_widget)
         content_splitter.setStretchFactor(0, 0)  # Left panel doesn't stretch
-        content_splitter.setStretchFactor(1, 1)  # Viewport area stretches
-        content_splitter.setSizes([200, 800])
+        content_splitter.setStretchFactor(1, 0)  # Histogram panel doesn't stretch when hidden
+        content_splitter.setStretchFactor(2, 1)  # Viewport area stretches
+        content_splitter.setSizes([200, 0, 800])
         content_splitter.setCollapsible(0, False)  # Prevent left panel from collapsing completely
-        content_splitter.setCollapsible(1, False)  # Prevent viewport from collapsing
+        content_splitter.setCollapsible(1, True)   # Histogram panel can collapse
+        content_splitter.setCollapsible(2, False)  # Prevent viewport from collapsing
+
+        # Store reference to content_splitter for histogram panel visibility
+        self.content_splitter = content_splitter
 
         layout.addWidget(content_splitter)
 
@@ -3847,6 +4269,7 @@ class VisualizationTab(QWidget):
                 self.stats_label.setText(stats_text)
 
         self.export_screenshot_btn.setEnabled(True)
+        self.trajectory_histogram_btn.setEnabled(True)
         self.updateVisualization()
 
         # Update status to complete
@@ -4279,20 +4702,27 @@ class VisualizationTab(QWidget):
         ax_yz.set_ylabel('Z', color='white', fontsize=8)
         ax_yz.tick_params(colors='white', labelsize=8)
 
-        # Show CT images from global volume or ROI volumes
+        # Show CT images from global volume, volume_data, or ROI volumes
         if show_ct:
+            # Try to get CT volume from various sources
+            ct_volume = None
             if global_volume is not None:
-                # Use global volume
-                if z_pos < global_volume.shape[0]:
-                    ct_slice = global_volume[z_pos, :, :]
+                ct_volume = global_volume
+            elif self.volume_data is not None:
+                ct_volume = self.volume_data
+
+            if ct_volume is not None:
+                # Use global/stored volume
+                if z_pos < ct_volume.shape[0]:
+                    ct_slice = ct_volume[z_pos, :, :]
                     ax_xy.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='lower',
                                 extent=[0, ct_slice.shape[1], 0, ct_slice.shape[0]])
-                if y_pos < global_volume.shape[1]:
-                    ct_slice = global_volume[:, y_pos, :]
+                if y_pos < ct_volume.shape[1]:
+                    ct_slice = ct_volume[:, y_pos, :]
                     ax_xz.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='lower',
                                 extent=[0, ct_slice.shape[1], 0, ct_slice.shape[0]], aspect='auto')
-                if x_pos < global_volume.shape[2]:
-                    ct_slice = global_volume[:, :, x_pos]
+                if x_pos < ct_volume.shape[2]:
+                    ct_slice = ct_volume[:, :, x_pos]
                     ax_yz.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='lower',
                                 extent=[0, ct_slice.shape[1], 0, ct_slice.shape[0]], aspect='auto')
             elif self.roi_trajectories:
@@ -4609,7 +5039,7 @@ class VisualizationTab(QWidget):
                 if yz_circle_centers:
                     draw_circles_batch(ax_yz, yz_circle_centers, radius)
 
-        # Set axis limits based on global volume
+        # Set axis limits based on global volume or ROI bounds
         if global_volume is not None:
             ax_xy.set_xlim(0, global_volume.shape[2])
             ax_xy.set_ylim(0, global_volume.shape[1])
@@ -4617,14 +5047,45 @@ class VisualizationTab(QWidget):
             ax_xz.set_ylim(0, global_volume.shape[0])
             ax_yz.set_xlim(0, global_volume.shape[1])
             ax_yz.set_ylim(0, global_volume.shape[0])
+        elif self.volume_shape is not None:
+            # Use stored volume shape from structure tensor
+            ax_xy.set_xlim(0, self.volume_shape[2])
+            ax_xy.set_ylim(0, self.volume_shape[1])
+            ax_xz.set_xlim(0, self.volume_shape[2])
+            ax_xz.set_ylim(0, self.volume_shape[0])
+            ax_yz.set_xlim(0, self.volume_shape[1])
+            ax_yz.set_ylim(0, self.volume_shape[0])
+        elif self.roi_trajectories:
+            # Compute bounds from ROI trajectories
+            x_max, y_max, z_max = 0, 0, 0
+            for roi_name, roi_data in self.roi_trajectories.items():
+                if not isinstance(roi_data, dict):
+                    continue
+                bounds = roi_data.get('bounds', None)
+                if bounds:
+                    roi_z_min, roi_z_max, roi_y_min, roi_y_max, roi_x_min, roi_x_max = bounds
+                    x_max = max(x_max, roi_x_max)
+                    y_max = max(y_max, roi_y_max)
+                    z_max = max(z_max, roi_z_max)
+            if x_max > 0 and y_max > 0 and z_max > 0:
+                ax_xy.set_xlim(0, x_max)
+                ax_xy.set_ylim(0, y_max)
+                ax_xz.set_xlim(0, x_max)
+                ax_xz.set_ylim(0, z_max)
+                ax_yz.set_xlim(0, y_max)
+                ax_yz.set_ylim(0, z_max)
 
         ax_xy.set_aspect('equal')
         ax_xz.set_aspect('equal')
         ax_yz.set_aspect('equal')
 
-        canvas_xy.draw()
-        canvas_xz.draw()
-        canvas_yz.draw()
+        # Force redraw of all canvases
+        canvas_xy.draw_idle()
+        canvas_xz.draw_idle()
+        canvas_yz.draw_idle()
+        canvas_xy.flush_events()
+        canvas_xz.flush_events()
+        canvas_yz.flush_events()
 
     def openSettingsDialog(self):
         """Open fiber trajectory settings dialog."""
@@ -4633,6 +5094,122 @@ class VisualizationTab(QWidget):
             self.trajectory_settings = dialog.getSettings()
             # Update slice views if show_fiber_diameter changed
             self.updateSliceViews()
+
+    def openTrajectoryHistogramDialog(self):
+        """Open fiber trajectory angle histogram dialog."""
+        dialog = TrajectoryHistogramDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            config = dialog.getConfiguration()
+            self.showTrajectoryHistogramPanel(config)
+
+    def showTrajectoryHistogramPanel(self, config):
+        """Show the trajectory histogram panel with the given configuration."""
+        if not self.main_window:
+            QMessageBox.warning(self, "Error", "Main window not found.")
+            return
+
+        # Collect trajectory angle data
+        angle_data = self._collectTrajectoryAngles(config)
+
+        # Check if we have any data
+        has_tilt = angle_data.get('tilt') is not None and len(angle_data['tilt']) > 0
+        has_azimuth = angle_data.get('azimuth') is not None and len(angle_data['azimuth']) > 0
+
+        if not has_tilt and not has_azimuth:
+            QMessageBox.warning(self, "No Data", "No trajectory angle data available.\n\nPlease generate fiber trajectory first.")
+            return
+
+        # Show histogram panel in Modelling tab (right of left panel)
+        self.histogram_panel.setVisible(True)
+        self.content_splitter.setSizes([200, 350, 600])  # Adjust splitter sizes
+        self.histogram_panel.plotTrajectoryHistogram(config, angle_data)
+
+    def _collectTrajectoryAngles(self, config):
+        """Collect trajectory angle data from all ROIs or single trajectory."""
+        angle_data = {
+            'tilt': [],
+            'azimuth': [],
+            'xz_projection': [],
+            'yz_projection': []
+        }
+
+        collected = False
+
+        def collect_from_trajectory(traj):
+            """Helper to collect angles from a trajectory object."""
+            nonlocal collected
+            if not traj:
+                return
+
+            # Get tilt angles
+            if hasattr(traj, 'angles') and traj.angles:
+                for slice_angles in traj.angles:
+                    if slice_angles is not None:
+                        arr = np.array(slice_angles).flatten()
+                        angle_data['tilt'].extend(arr.tolist())
+                        collected = True
+
+            # Get azimuth angles
+            if hasattr(traj, 'azimuths') and traj.azimuths:
+                for slice_azimuths in traj.azimuths:
+                    if slice_azimuths is not None:
+                        arr = np.array(slice_azimuths).flatten()
+                        angle_data['azimuth'].extend(arr.tolist())
+
+            # Calculate XZ and YZ projection angles from tilt and azimuth
+            if hasattr(traj, 'angles') and traj.angles and hasattr(traj, 'azimuths') and traj.azimuths:
+                for slice_idx in range(len(traj.angles)):
+                    slice_tilts = traj.angles[slice_idx]
+                    slice_azimuths = traj.azimuths[slice_idx] if slice_idx < len(traj.azimuths) else None
+
+                    if slice_tilts is not None and slice_azimuths is not None:
+                        tilts = np.array(slice_tilts).flatten()
+                        azimuths = np.array(slice_azimuths).flatten()
+
+                        # Ensure same length
+                        min_len = min(len(tilts), len(azimuths))
+                        tilts = tilts[:min_len]
+                        azimuths = azimuths[:min_len]
+
+                        # Convert to radians
+                        tilt_rad = np.radians(tilts)
+                        azimuth_rad = np.radians(azimuths)
+
+                        # XZ projection angle: arctan(tan(tilt) * cos(azimuth))
+                        # This is the angle seen when looking along Y axis
+                        xz_proj = np.degrees(np.arctan(np.tan(tilt_rad) * np.cos(azimuth_rad)))
+                        angle_data['xz_projection'].extend(xz_proj.tolist())
+
+                        # YZ projection angle: arctan(tan(tilt) * sin(azimuth))
+                        # This is the angle seen when looking along X axis
+                        yz_proj = np.degrees(np.arctan(np.tan(tilt_rad) * np.sin(azimuth_rad)))
+                        angle_data['yz_projection'].extend(yz_proj.tolist())
+
+        # Collect from ROI trajectories if specified
+        if config.get('rois') and self.roi_trajectories:
+            for roi_name in config['rois']:
+                if roi_name in self.roi_trajectories:
+                    roi_data = self.roi_trajectories[roi_name]
+                    traj = roi_data.get('trajectory')
+                    collect_from_trajectory(traj)
+
+        # If no specific ROIs selected but ROI trajectories exist, use all of them
+        if not collected and not config.get('use_single_trajectory') and self.roi_trajectories:
+            for roi_name, roi_data in self.roi_trajectories.items():
+                traj = roi_data.get('trajectory')
+                collect_from_trajectory(traj)
+
+        # Use single trajectory if explicitly requested or as fallback
+        if (config.get('use_single_trajectory') or not collected) and self.fiber_trajectory is not None:
+            collect_from_trajectory(self.fiber_trajectory)
+
+        # Convert to numpy arrays
+        angle_data['tilt'] = np.array(angle_data['tilt']) if angle_data['tilt'] else None
+        angle_data['azimuth'] = np.array(angle_data['azimuth']) if angle_data['azimuth'] else None
+        angle_data['xz_projection'] = np.array(angle_data['xz_projection']) if angle_data['xz_projection'] else None
+        angle_data['yz_projection'] = np.array(angle_data['yz_projection']) if angle_data['yz_projection'] else None
+
+        return angle_data
 
     def showExportScreenshotDialog(self):
         """Show export screenshot dialog."""
@@ -5201,7 +5778,7 @@ class AnalysisTab(QWidget):
 
         toolbar_layout.addWidget(ref_group)
 
-        # Fiber Detection Group
+        # Fiber Detection Group (Watershed-based)
         fiber_group = QGroupBox("Fiber Detection")
         fiber_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
         fiber_layout = QHBoxLayout(fiber_group)
@@ -5216,12 +5793,41 @@ class AnalysisTab(QWidget):
 
         toolbar_layout.addWidget(fiber_group)
 
+        # InSegt Group (Interactive Segmentation)
+        insegt_group = QGroupBox("InSegt")
+        insegt_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        insegt_layout = QHBoxLayout(insegt_group)
+
+        self.insegt_settings_btn = RibbonButton("InSegt\nSettings")
+        self.insegt_settings_btn.setToolTip("Configure InSegt processing parameters")
+        self.insegt_settings_btn.clicked.connect(self.openInSegtSettings)
+        insegt_layout.addWidget(self.insegt_settings_btn)
+
+        self.insegt_labeling_btn = RibbonButton("Labeling")
+        self.insegt_labeling_btn.setToolTip(
+            "Open InSegt interactive labeling tool.\n"
+            "Draw fiber (red) and background (green) annotations."
+        )
+        self.insegt_labeling_btn.clicked.connect(self.openInSegtLabeling)
+        insegt_layout.addWidget(self.insegt_labeling_btn)
+
+        self.insegt_run_btn = RibbonButton("Run")
+        self.insegt_run_btn.setToolTip(
+            "Apply InSegt model to detect fibers in all slices.\n"
+            "Requires labeling to be completed first."
+        )
+        self.insegt_run_btn.clicked.connect(self.runInSegt)
+        self.insegt_run_btn.setEnabled(False)  # Disabled until labeling is done
+        insegt_layout.addWidget(self.insegt_run_btn)
+
+        toolbar_layout.addWidget(insegt_group)
+
         toolbar_layout.addStretch()
 
         layout.addWidget(toolbar)
         layout.addStretch()
 
-        # Initialize fiber detection settings
+        # Initialize fiber detection settings (watershed-based)
         self.fiber_detection_settings = {
             'min_diameter': 5.0,
             'max_diameter': 25.0,
@@ -5230,6 +5836,22 @@ class AnalysisTab(QWidget):
             'show_centers': True,
             'center_marker_size': 3
         }
+
+        # InSegt settings (separate)
+        self.insegt_settings = {
+            'scale': 0.5,
+            'sigmas': [1, 2],
+            'patch_size': 9,
+            'branching_factor': 5,
+            'number_layers': 4,
+            'training_patches': 10000
+        }
+
+        # InSegt model storage
+        self.insegt_model = None
+        self.insegt_labels = None
+        self._insegt_scale = 0.5  # Store scale used during labeling
+        self._insegt_labels_ready = False  # Flag to enable Run button
 
     def openFiberDetectionSettings(self):
         """Open fiber detection settings dialog"""
@@ -5380,6 +6002,437 @@ class AnalysisTab(QWidget):
             main_window.showProgress(False)
             QMessageBox.critical(self, "Detection Error", f"Failed to detect fibers:\n{str(e)}")
             main_window.status_label.setText(f"Detection failed: {str(e)}")
+
+    def openInSegtSettings(self):
+        """Open InSegt settings dialog."""
+        dialog = InSegtSettingsDialog(self, self.insegt_settings)
+        if dialog.exec() == QDialog.Accepted:
+            self.insegt_settings = dialog.getSettings()
+
+    def openInSegtLabeling(self):
+        """Open InSegt interactive labeling tool for the current slice.
+
+        Launches InSegt in a subprocess to avoid Qt conflicts.
+        """
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        main_window = getattr(self, 'main_window', None)
+
+        if not main_window:
+            QMessageBox.warning(self, "Error", "No main window reference")
+            return
+
+        if main_window.current_volume is None:
+            QMessageBox.warning(self, "Error", "No volume loaded. Please import a volume first.")
+            return
+
+        # Get ROI bounds
+        rois = main_window.viewer.rois if main_window.viewer else {}
+        bounds = None
+        for name, roi_data in rois.items():
+            if name != '_no_roi' and roi_data.get('bounds') is not None:
+                bounds = roi_data['bounds']
+                break
+
+        if bounds is None:
+            # Use full slice
+            y_min, y_max = 0, main_window.current_volume.shape[1]
+            x_min, x_max = 0, main_window.current_volume.shape[2]
+        else:
+            _, _, y_min, y_max, x_min, x_max = bounds
+
+        # Store ROI bounds for later use
+        self._insegt_roi_bounds = (y_min, y_max, x_min, x_max)
+
+        # Get current slice index from slider
+        current_z = main_window.z_slice_slider.value() if hasattr(main_window, 'z_slice_slider') else 0
+        slice_image = main_window.current_volume[current_z, y_min:y_max, x_min:x_max]
+
+        main_window.status_label.setText(f"Launching InSegt labeling for slice {current_z} (ROI: {x_max-x_min}x{y_max-y_min})...")
+        QApplication.processEvents()
+
+        try:
+            # Create temp directory for communication
+            self._insegt_temp_dir = tempfile.mkdtemp(prefix="insegt_")
+            temp_dir = Path(self._insegt_temp_dir)
+
+            # Save ROI image to temp file
+            image_path = temp_dir / "slice_image.npy"
+            np.save(str(image_path), slice_image)
+
+            # Get path to the runner script
+            script_path = Path(__file__).parent / "insegt" / "run_insegt_gui.py"
+
+            # Get settings from insegt_settings
+            insegt_scale = self.insegt_settings.get('scale', 0.5)
+            sigmas = self.insegt_settings.get('sigmas', [1, 2])
+            patch_size = self.insegt_settings.get('patch_size', 9)
+            branching_factor = self.insegt_settings.get('branching_factor', 5)
+            number_layers = self.insegt_settings.get('number_layers', 4)
+            training_patches = self.insegt_settings.get('training_patches', 10000)
+
+            self._insegt_scale = insegt_scale
+
+            # Build command
+            cmd = [
+                sys.executable,
+                str(script_path),
+                str(image_path),
+                str(temp_dir),
+                "--sigmas", ",".join(str(s) for s in sigmas),
+                "--patch-size", str(patch_size),
+                "--branching-factor", str(branching_factor),
+                "--number-layers", str(number_layers),
+                "--training-patches", str(training_patches),
+                "--scale", str(insegt_scale)
+            ]
+
+            # Launch subprocess
+            self._insegt_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == 'win32' else 0
+            )
+
+            main_window.status_label.setText(
+                f"InSegt labeling opened for slice {current_z}. "
+                "Close the InSegt window when done."
+            )
+
+            # Store current slice info
+            self._insegt_slice_z = current_z
+
+            # Start timer to check for completion
+            self._insegt_check_timer = QTimer()
+            self._insegt_check_timer.timeout.connect(self._checkInSegtProcess)
+            self._insegt_check_timer.start(1000)  # Check every second
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open InSegt labeling:\n{str(e)}")
+            main_window.status_label.setText(f"InSegt error: {str(e)}")
+
+    def _checkInSegtProcess(self):
+        """Check if InSegt subprocess has completed."""
+        from pathlib import Path
+
+        main_window = getattr(self, 'main_window', None)
+
+        if not hasattr(self, '_insegt_process') or self._insegt_process is None:
+            if hasattr(self, '_insegt_check_timer'):
+                self._insegt_check_timer.stop()
+            return
+
+        # Check if process is still running
+        poll = self._insegt_process.poll()
+        if poll is None:
+            # Still running
+            return
+
+        # Process finished - stop timer
+        self._insegt_check_timer.stop()
+
+        # Check status file
+        temp_dir = Path(self._insegt_temp_dir)
+        status_file = temp_dir / "insegt_status.txt"
+        labels_file = temp_dir / "insegt_labels.npy"
+
+        try:
+            if status_file.exists():
+                with open(status_file, 'r') as f:
+                    lines = f.read().strip().split('\n')
+
+                status = lines[0] if len(lines) > 0 else "unknown"
+
+                if status == "completed":
+                    labels_path = lines[1] if len(lines) > 1 else str(labels_file)
+
+                    # Load labels
+                    if Path(labels_path).exists():
+                        self.insegt_labels = np.load(labels_path)
+                        self._insegt_labels_ready = True
+
+                        # Enable Run button
+                        self.insegt_run_btn.setEnabled(True)
+
+                        if main_window:
+                            main_window.status_label.setText(
+                                f"InSegt labeling completed. Click 'Run' to detect fibers."
+                            )
+
+                elif status == "error":
+                    error_msg = lines[1] if len(lines) > 1 else "Unknown error"
+                    QMessageBox.warning(self, "InSegt Error", f"InSegt process error:\n{error_msg}")
+                    if main_window:
+                        main_window.status_label.setText(f"InSegt error: {error_msg}")
+
+            else:
+                # No status file - check stderr
+                stderr = self._insegt_process.stderr.read().decode() if self._insegt_process.stderr else ""
+                if stderr:
+                    print(f"InSegt stderr: {stderr}")
+                if main_window:
+                    main_window.status_label.setText("InSegt process ended (no status)")
+
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Error processing InSegt results:\n{str(e)}")
+            if main_window:
+                main_window.status_label.setText(f"InSegt error: {str(e)}")
+
+        finally:
+            # Cleanup
+            self._insegt_process = None
+
+            # Optionally cleanup temp directory (keep for debugging)
+            # import shutil
+            # shutil.rmtree(self._insegt_temp_dir, ignore_errors=True)
+
+    def runInSegt(self):
+        """Apply InSegt model to all slices using the labeled data."""
+        from pathlib import Path
+
+        main_window = getattr(self, 'main_window', None)
+        if not main_window or main_window.current_volume is None:
+            QMessageBox.warning(self, "Error", "No volume loaded.")
+            return
+
+        if self.insegt_labels is None or not self._insegt_labels_ready:
+            QMessageBox.warning(self, "Error",
+                "No labels available.\nPlease run 'Labeling' first.")
+            return
+
+        # Build model from the training slice
+        process_scale = self.insegt_settings.get('scale', 0.5)
+        if hasattr(self, '_insegt_scale'):
+            process_scale = self._insegt_scale
+
+        # Get ROI bounds
+        rois = main_window.viewer.rois if main_window.viewer else {}
+        bounds = None
+
+        for name, roi_data in rois.items():
+            if name != '_no_roi' and roi_data.get('bounds') is not None:
+                bounds = roi_data['bounds']
+                break
+
+        if bounds is None:
+            z_min, z_max = 0, main_window.current_volume.shape[0]
+            y_min, y_max = 0, main_window.current_volume.shape[1]
+            x_min, x_max = 0, main_window.current_volume.shape[2]
+            bounds = (z_min, z_max, y_min, y_max, x_min, x_max)
+
+        z_min, z_max, y_min, y_max, x_min, x_max = bounds
+        n_slices = z_max - z_min
+
+        main_window.status_label.setText(f"Building InSegt model (scale={process_scale})...")
+        main_window.showProgress(True)
+        main_window.progress_bar.setRange(0, n_slices + 1)
+        main_window.progress_bar.setValue(0)
+        QApplication.processEvents()
+
+        try:
+            from acsc.insegt.fiber_model import FiberSegmentationModel
+            from scipy.ndimage import distance_transform_edt
+            from skimage.feature import peak_local_max
+            from skimage.segmentation import watershed
+            from skimage.measure import regionprops
+            import acsc.insegt.models.utils as insegt_utils
+
+            # Build model from the first (training) slice at scaled resolution
+            training_z = self._insegt_slice_z if hasattr(self, '_insegt_slice_z') else z_min
+            training_slice = main_window.current_volume[training_z, y_min:y_max, x_min:x_max]
+
+            # Scale training image
+            if process_scale != 1.0:
+                training_slice_scaled = cv.resize(
+                    training_slice,
+                    None,
+                    fx=process_scale,
+                    fy=process_scale,
+                    interpolation=cv.INTER_AREA
+                )
+            else:
+                training_slice_scaled = training_slice
+
+            # Create and build model
+            self.insegt_model = FiberSegmentationModel(
+                sigmas=[1, 2],
+                patch_size=9,
+                branching_factor=5,
+                number_layers=4,
+                training_patches=10000
+            )
+            self.insegt_model.build_from_image(training_slice_scaled)
+
+            main_window.progress_bar.setValue(1)
+            main_window.status_label.setText(f"Detecting fibers in {n_slices} slices...")
+            QApplication.processEvents()
+
+            # Process all slices
+            all_slice_results = {}
+            total_fibers = 0
+            all_diameters = []
+
+            for i, z in enumerate(range(z_min, z_max)):
+                main_window.progress_bar.setValue(i + 1)
+                if i % 10 == 0:
+                    main_window.status_label.setText(f"InSegt detecting: slice {i+1}/{n_slices}...")
+                    QApplication.processEvents()
+
+                # Extract slice
+                slice_image = main_window.current_volume[z, y_min:y_max, x_min:x_max]
+                orig_shape = slice_image.shape
+
+                # Downscale for faster processing
+                if process_scale != 1.0:
+                    slice_small = cv.resize(
+                        slice_image,
+                        None,
+                        fx=process_scale,
+                        fy=process_scale,
+                        interpolation=cv.INTER_AREA
+                    )
+                else:
+                    slice_small = slice_image
+
+                # Set image and process at reduced scale
+                self.insegt_model.set_image(slice_small)
+                probs = self.insegt_model.process(self.insegt_labels)
+                segmentation_small = insegt_utils.segment_probabilities(probs)
+
+                # Upscale segmentation back to original size
+                if process_scale != 1.0:
+                    segmentation = cv.resize(
+                        segmentation_small.astype(np.uint8),
+                        (orig_shape[1], orig_shape[0]),
+                        interpolation=cv.INTER_NEAREST
+                    )
+                else:
+                    segmentation = segmentation_small
+
+                # Fiber is class 1
+                binary = (segmentation == 1)
+
+                if np.sum(binary) == 0:
+                    continue
+
+                # Distance transform and watershed
+                distance = distance_transform_edt(binary)
+                min_distance = int(self.fiber_detection_settings['min_diameter'] / 2)
+
+                coords = peak_local_max(
+                    distance,
+                    min_distance=max(min_distance, 3),
+                    labels=binary,
+                    exclude_border=False
+                )
+
+                if len(coords) == 0:
+                    continue
+
+                markers = np.zeros_like(binary, dtype=np.int32)
+                for j, (y, x) in enumerate(coords):
+                    markers[y, x] = j + 1
+
+                labels_ws = watershed(-distance, markers, mask=binary)
+                props = regionprops(labels_ws)
+
+                centers = []
+                diameters = []
+                valid_labels_list = []
+
+                for prop in props:
+                    area = prop.area
+                    diameter = 2 * np.sqrt(area / np.pi)
+
+                    min_d = self.fiber_detection_settings['min_diameter']
+                    max_d = self.fiber_detection_settings['max_diameter']
+
+                    if min_d < diameter < max_d:
+                        y, x = prop.centroid
+                        centers.append([x, y])
+                        diameters.append(diameter)
+                        valid_labels_list.append(prop.label)
+
+                if len(centers) > 0:
+                    filtered_labels = np.zeros_like(labels_ws)
+                    for new_label, old_label in enumerate(valid_labels_list, start=1):
+                        filtered_labels[labels_ws == old_label] = new_label
+
+                    all_slice_results[z] = {
+                        'centers': np.array(centers),
+                        'diameters': np.array(diameters),
+                        'labels': filtered_labels
+                    }
+                    total_fibers += len(centers)
+                    all_diameters.extend(diameters)
+
+            main_window.progress_bar.setValue(n_slices + 1)
+            main_window.showProgress(False)
+
+            if total_fibers == 0:
+                QMessageBox.information(self, "Result", "No fibers detected with InSegt model.")
+                main_window.status_label.setText("No fibers detected")
+                return
+
+            # Store results
+            main_window.viewer.fiber_detection_result = {
+                'all_slices': all_slice_results,
+                'roi_offset': (x_min, y_min),
+                'roi_bounds': bounds,
+                'settings': self.fiber_detection_settings.copy()
+            }
+
+            main_window.viewer.show_fiber_detection = True
+            main_window.viewer.renderVolume()
+
+            # Show results
+            all_diameters_arr = np.array(all_diameters)
+            mean_diameter = np.mean(all_diameters_arr)
+            std_diameter = np.std(all_diameters_arr)
+            avg_fibers = total_fibers / n_slices
+
+            main_window.status_label.setText(
+                f"InSegt detected {total_fibers} fibers in {len(all_slice_results)}/{n_slices} slices"
+            )
+
+            QMessageBox.information(self, "InSegt Detection Complete",
+                f"Fiber detection completed\n\n"
+                f"Slices processed: {n_slices}\n"
+                f"Slices with fibers: {len(all_slice_results)}\n"
+                f"Total fibers: {total_fibers}\n"
+                f"Avg fibers per slice: {avg_fibers:.1f}\n\n"
+                f"Mean diameter: {mean_diameter:.2f} px\n"
+                f"Std deviation: {std_diameter:.2f} px"
+            )
+
+        except Exception as e:
+            main_window.showProgress(False)
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"InSegt detection failed:\n{str(e)}")
+            main_window.status_label.setText(f"InSegt error: {str(e)}")
+
+    def saveInSegtModel(self):
+        """Save the current InSegt model to a file."""
+        if self.insegt_model is None:
+            QMessageBox.warning(self, "Error", "No InSegt model to save.")
+            return
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Save InSegt Model", "", "InSegt Model (*.insegt);;All Files (*)"
+        )
+
+        if filepath:
+            if not filepath.endswith('.insegt'):
+                filepath += '.insegt'
+            try:
+                self.insegt_model.save(filepath)
+                QMessageBox.information(self, "Success", f"Model saved to:\n{filepath}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save model:\n{str(e)}")
 
     def toggleROIEdit(self, checked):
         """Toggle ROI editing mode"""
@@ -5541,9 +6594,9 @@ class AnalysisTab(QWidget):
                 if hasattr(main_window, 'simulation_tab'):
                     main_window.simulation_tab.histogram_btn.setEnabled(True)
 
-                # Pass structure tensor to Visualization tab for fiber trajectory generation
-                if hasattr(main_window, 'visualization_tab'):
-                    main_window.visualization_tab.setStructureTensor(structure_tensor, volume.shape, volume)
+                # Pass structure tensor to Modelling tab for fiber trajectory generation
+                if hasattr(main_window, 'modelling_tab'):
+                    main_window.modelling_tab.setStructureTensor(structure_tensor, volume.shape, volume)
 
                 # Store orientation data in the ROI structure
                 if roi_name in main_window.viewer.rois:
@@ -5789,6 +6842,182 @@ class HistogramDialog(QDialog):
             }
         }
         return config
+
+
+class TrajectoryHistogramDialog(QDialog):
+    """Dialog for configuring fiber trajectory angle histogram."""
+    def __init__(self, visualization_tab):
+        super().__init__()
+        self.visualization_tab = visualization_tab
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("Trajectory Angle Histogram")
+        self.setModal(True)
+        self.resize(400, 420)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        # Title
+        title = QLabel("Fiber Trajectory Histogram Settings")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(title)
+
+        # Bin Settings Group
+        bin_group = QGroupBox("Bin Settings")
+        bin_layout = QGridLayout(bin_group)
+
+        bin_layout.addWidget(QLabel("Number of Bins:"), 0, 0)
+        self.bins_spin = QSpinBox()
+        self.bins_spin.setRange(10, 200)
+        self.bins_spin.setValue(50)
+        bin_layout.addWidget(self.bins_spin, 0, 1)
+
+        bin_layout.addWidget(QLabel("Range Min (°):"), 1, 0)
+        self.range_min_spin = QDoubleSpinBox()
+        self.range_min_spin.setRange(-180, 180)
+        self.range_min_spin.setValue(0)
+        self.range_min_spin.setDecimals(1)
+        bin_layout.addWidget(self.range_min_spin, 1, 1)
+
+        bin_layout.addWidget(QLabel("Range Max (°):"), 2, 0)
+        self.range_max_spin = QDoubleSpinBox()
+        self.range_max_spin.setRange(-180, 180)
+        self.range_max_spin.setValue(30)
+        self.range_max_spin.setDecimals(1)
+        bin_layout.addWidget(self.range_max_spin, 2, 1)
+
+        self.auto_range_check = QCheckBox("Auto Range")
+        self.auto_range_check.setChecked(True)
+        self.auto_range_check.toggled.connect(self.toggleAutoRange)
+        bin_layout.addWidget(self.auto_range_check, 3, 0, 1, 2)
+
+        layout.addWidget(bin_group)
+
+        # ROI Selection Group
+        roi_group = QGroupBox("Select ROIs")
+        roi_layout = QVBoxLayout(roi_group)
+
+        self.roi_checkboxes = {}
+
+        # Add checkbox for each ROI that has trajectory data
+        if hasattr(self.visualization_tab, 'roi_trajectories'):
+            for roi_name in self.visualization_tab.roi_trajectories.keys():
+                roi_check = QCheckBox(roi_name)
+                roi_check.setChecked(True)
+                self.roi_checkboxes[roi_name] = roi_check
+                roi_layout.addWidget(roi_check)
+
+        # If no ROI trajectories but has single trajectory
+        if not self.roi_checkboxes and self.visualization_tab.fiber_trajectory is not None:
+            single_check = QCheckBox("Current Trajectory")
+            single_check.setChecked(True)
+            self.roi_checkboxes['_single'] = single_check
+            roi_layout.addWidget(single_check)
+
+        # If no trajectories available
+        if not self.roi_checkboxes:
+            no_traj_label = QLabel("No trajectory data available")
+            no_traj_label.setStyleSheet("color: gray; font-style: italic;")
+            roi_layout.addWidget(no_traj_label)
+
+        layout.addWidget(roi_group)
+
+        # Angle Type Selection Group
+        angle_group = QGroupBox("Select Angle Types")
+        angle_layout = QVBoxLayout(angle_group)
+
+        self.tilt_check = QCheckBox("Tilt Angle (from fiber axis)")
+        self.tilt_check.setChecked(True)
+        angle_layout.addWidget(self.tilt_check)
+
+        self.azimuth_check = QCheckBox("Azimuth Angle (in cross-section)")
+        self.azimuth_check.setChecked(False)
+        angle_layout.addWidget(self.azimuth_check)
+
+        self.xz_projection_check = QCheckBox("XZ Projection Angle")
+        self.xz_projection_check.setChecked(False)
+        angle_layout.addWidget(self.xz_projection_check)
+
+        self.yz_projection_check = QCheckBox("YZ Projection Angle")
+        self.yz_projection_check.setChecked(False)
+        angle_layout.addWidget(self.yz_projection_check)
+
+        layout.addWidget(angle_group)
+
+        # Statistical Display Options Group
+        stats_group = QGroupBox("Statistical Analysis")
+        stats_layout = QVBoxLayout(stats_group)
+
+        self.show_mean_check = QCheckBox("Show Mean")
+        self.show_mean_check.setChecked(True)
+        self.show_deviation_check = QCheckBox("Show Standard Deviation")
+        self.show_deviation_check.setChecked(True)
+        self.show_cv_check = QCheckBox("Show Coefficient of Variation (CV)")
+        self.show_cv_check.setChecked(True)
+
+        stats_layout.addWidget(self.show_mean_check)
+        stats_layout.addWidget(self.show_deviation_check)
+        stats_layout.addWidget(self.show_cv_check)
+
+        layout.addWidget(stats_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        self.show_btn = QPushButton("Show")
+        self.cancel_btn = QPushButton("Cancel")
+
+        self.show_btn.clicked.connect(self.accept)
+        self.cancel_btn.clicked.connect(self.reject)
+
+        button_layout.addWidget(self.show_btn)
+        button_layout.addWidget(self.cancel_btn)
+
+        layout.addLayout(button_layout)
+
+        # Initialize auto range
+        self.toggleAutoRange(True)
+
+    def toggleAutoRange(self, checked):
+        """Enable/disable manual range controls"""
+        self.range_min_spin.setEnabled(not checked)
+        self.range_max_spin.setEnabled(not checked)
+
+    def getConfiguration(self):
+        """Return the histogram configuration"""
+        # Get selected ROIs
+        selected_rois = []
+        use_single = False
+        for roi_name, roi_check in self.roi_checkboxes.items():
+            if roi_check.isChecked():
+                if roi_name == '_single':
+                    use_single = True
+                else:
+                    selected_rois.append(roi_name)
+
+        config = {
+            'bins': self.bins_spin.value(),
+            'range': (self.range_min_spin.value(), self.range_max_spin.value()),
+            'auto_range': self.auto_range_check.isChecked(),
+            'rois': selected_rois if selected_rois else None,
+            'use_single_trajectory': use_single,
+            'angles': {
+                'tilt': self.tilt_check.isChecked(),
+                'azimuth': self.azimuth_check.isChecked(),
+                'xz_projection': self.xz_projection_check.isChecked(),
+                'yz_projection': self.yz_projection_check.isChecked()
+            },
+            'statistics': {
+                'mean': self.show_mean_check.isChecked(),
+                'std': self.show_deviation_check.isChecked(),
+                'cv': self.show_cv_check.isChecked()
+            }
+        }
+        return config
+
 
 class ColorBarRangeDialog(QDialog):
     def __init__(self, main_window, analysis_tab):
@@ -6532,13 +7761,125 @@ class FiberTrajectorySettingsDialog(QDialog):
         }
 
 
+class InSegtSettingsDialog(QDialog):
+    """Dialog for InSegt (Interactive Segmentation) settings."""
+    def __init__(self, parent=None, settings=None):
+        super().__init__(parent)
+        self.setWindowTitle("InSegt Settings")
+        self.setModal(True)
+        self.setMinimumWidth(350)
+
+        self.settings = settings or {
+            'scale': 0.5,
+            'sigmas': [1, 2],
+            'patch_size': 9,
+            'branching_factor': 5,
+            'number_layers': 4,
+            'training_patches': 10000
+        }
+
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+
+        # Processing Scale
+        scale_group = QGroupBox("Processing Scale")
+        scale_layout = QFormLayout(scale_group)
+
+        self.scale_combo = QComboBox()
+        self.scale_combo.addItems(["0.25 (fastest)", "0.5 (balanced)", "0.75", "1.0 (full resolution)"])
+        scale_val = self.settings.get('scale', 0.5)
+        if scale_val <= 0.25:
+            self.scale_combo.setCurrentIndex(0)
+        elif scale_val <= 0.5:
+            self.scale_combo.setCurrentIndex(1)
+        elif scale_val <= 0.75:
+            self.scale_combo.setCurrentIndex(2)
+        else:
+            self.scale_combo.setCurrentIndex(3)
+        self.scale_combo.setToolTip(
+            "Image scale for processing:\n"
+            "0.25 = ~16x faster (lower accuracy)\n"
+            "0.5 = ~4x faster (good balance)\n"
+            "1.0 = full resolution (slowest, best accuracy)"
+        )
+        scale_layout.addRow("Scale:", self.scale_combo)
+
+        layout.addWidget(scale_group)
+
+        # Model Parameters
+        model_group = QGroupBox("Model Parameters")
+        model_layout = QFormLayout(model_group)
+
+        self.patch_size_spin = QSpinBox()
+        self.patch_size_spin.setRange(5, 15)
+        self.patch_size_spin.setSingleStep(2)
+        self.patch_size_spin.setValue(self.settings.get('patch_size', 9))
+        self.patch_size_spin.setToolTip("Patch size for KM-tree (odd number)")
+        model_layout.addRow("Patch Size:", self.patch_size_spin)
+
+        self.branching_factor_spin = QSpinBox()
+        self.branching_factor_spin.setRange(2, 10)
+        self.branching_factor_spin.setValue(self.settings.get('branching_factor', 5))
+        self.branching_factor_spin.setToolTip("Branching factor for KM-tree")
+        model_layout.addRow("Branching Factor:", self.branching_factor_spin)
+
+        self.number_layers_spin = QSpinBox()
+        self.number_layers_spin.setRange(2, 8)
+        self.number_layers_spin.setValue(self.settings.get('number_layers', 4))
+        self.number_layers_spin.setToolTip("Number of layers in KM-tree")
+        model_layout.addRow("Number of Layers:", self.number_layers_spin)
+
+        self.training_patches_spin = QSpinBox()
+        self.training_patches_spin.setRange(1000, 50000)
+        self.training_patches_spin.setSingleStep(1000)
+        self.training_patches_spin.setValue(self.settings.get('training_patches', 10000))
+        self.training_patches_spin.setToolTip("Number of training patches for KM-tree")
+        model_layout.addRow("Training Patches:", self.training_patches_spin)
+
+        layout.addWidget(model_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addStretch()
+        button_layout.addWidget(ok_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+
+    def getSettings(self):
+        """Return the current settings."""
+        scale_text = self.scale_combo.currentText()
+        if "0.25" in scale_text:
+            scale = 0.25
+        elif "0.5" in scale_text:
+            scale = 0.5
+        elif "0.75" in scale_text:
+            scale = 0.75
+        else:
+            scale = 1.0
+
+        return {
+            'scale': scale,
+            'sigmas': [1, 2],  # Fixed for now
+            'patch_size': self.patch_size_spin.value(),
+            'branching_factor': self.branching_factor_spin.value(),
+            'number_layers': self.number_layers_spin.value(),
+            'training_patches': self.training_patches_spin.value()
+        }
+
+
 class FiberDetectionSettingsDialog(QDialog):
     """Dialog for fiber detection settings in Analysis tab"""
     def __init__(self, parent=None, settings=None):
         super().__init__(parent)
         self.setWindowTitle("Fiber Detection Settings")
         self.setModal(True)
-        self.setMinimumWidth(350)
+        self.setMinimumWidth(400)
 
         # Default settings
         self.settings = settings or {
@@ -7442,15 +8783,15 @@ class ACSCMainWindow(QMainWindow):
         self.analysis_tab = AnalysisTab()
         self.tabs.addTab(self.analysis_tab, "Analysis")
 
-        # Simulation tab
+        # Modelling tab (fiber trajectory)
+        self.modelling_tab = VisualizationTab()
+        self.modelling_tab.setMainWindow(self)
+        self.tabs.addTab(self.modelling_tab, "Modelling")
+
+        # Simulation tab - last tab
         self.simulation_tab = SimulationTab()
         self.simulation_tab.setMainWindow(self)
         self.tabs.addTab(self.simulation_tab, "Simulation")
-
-        # Visualization tab (fiber trajectory) - last tab
-        self.visualization_tab = VisualizationTab()
-        self.visualization_tab.setMainWindow(self)
-        self.tabs.addTab(self.visualization_tab, "Visualization")
 
         main_layout.addWidget(self.tabs)
 
@@ -7666,20 +9007,20 @@ class ACSCMainWindow(QMainWindow):
 
     def onTabChanged(self, index):
         """Handle tab change to show/hide appropriate controls"""
-        # Tab indices: 0=Volume, 1=Analysis, 2=Simulation, 3=Visualization
-        if index == 2:  # Simulation tab
+        # Tab indices: 0=Volume, 1=Analysis, 2=Modelling, 3=Simulation
+        if index == 2:  # Modelling tab (fiber trajectory)
+            # Hide slicer view, Modelling tab has its own viewport
+            self.content_splitter.setVisible(False)
+            self.simulation_content.setVisible(False)
+            self.noise_group.setVisible(False)
+            # Remove height limit for Modelling tab (full window)
+            self.tabs.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+        elif index == 3:  # Simulation tab
             # Hide slicer view, show simulation content
             self.content_splitter.setVisible(False)
             self.simulation_content.setVisible(True)
             self.noise_group.setVisible(False)
             self.tabs.setMaximumHeight(200)
-        elif index == 3:  # Visualization tab (fiber trajectory)
-            # Hide slicer view, Visualization tab has its own viewport
-            self.content_splitter.setVisible(False)
-            self.simulation_content.setVisible(False)
-            self.noise_group.setVisible(False)
-            # Remove height limit for Visualization tab (full window)
-            self.tabs.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
         else:
             # Show slicer view, hide simulation content
             self.content_splitter.setVisible(True)

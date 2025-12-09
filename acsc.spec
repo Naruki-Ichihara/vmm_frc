@@ -18,7 +18,10 @@ pyside6_path = Path(PySide6.__file__).parent
 a = Analysis(
     ['run_gui.py'],
     pathex=[str(project_root)],
-    binaries=[],
+    binaries=[
+        # InSegt KM-Tree DLL
+        (str(project_root / 'acsc' / 'insegt' / 'models' / 'km_dict_lib.dll'), 'acsc/insegt/models'),
+    ],
     datas=[
         # Include PySide6 plugins (required for Qt to work)
         (str(pyside6_path / 'plugins' / 'platforms'), 'PySide6/plugins/platforms'),
@@ -26,6 +29,8 @@ a = Analysis(
         (str(pyside6_path / 'plugins' / 'imageformats'), 'PySide6/plugins/imageformats'),
         # Include assets (parameters and logo)
         (str(project_root / 'assets'), 'assets'),
+        # Include InSegt modules
+        (str(project_root / 'acsc' / 'insegt'), 'acsc/insegt'),
     ],
     hiddenimports=[
         # NumPy and SciPy
@@ -87,6 +92,22 @@ a = Analysis(
         'acsc.io',
         'acsc.gui',
         'acsc.simulation',
+
+        # InSegt modules
+        'acsc.insegt',
+        'acsc.insegt.models',
+        'acsc.insegt.models.kmdict',
+        'acsc.insegt.models.gaussfeat',
+        'acsc.insegt.models.utils',
+        'acsc.insegt.fiber_model',
+        'acsc.insegt.annotators',
+        'acsc.insegt.annotators.dual_panel_annotator',
+        'acsc.insegt.annotators.insegtannotator',
+        'acsc.insegt.annotators.annotator',
+
+        # Pillow
+        'PIL',
+        'PIL.Image',
     ],
     hookspath=[],
     hooksconfig={},
@@ -96,6 +117,11 @@ a = Analysis(
         '_tkinter',
         'tcl',
         'tk',
+        # Exclude PyQt5 to avoid Qt binding conflict with PySide6
+        'PyQt5',
+        'PyQt5.QtCore',
+        'PyQt5.QtWidgets',
+        'PyQt5.QtGui',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

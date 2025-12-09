@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acsc"
-version = "0.0.5"
+version = "0.0.6"
 description = "Axial compressive strength calculator"
 readme = "README.md"
 license = {text = "MIT"}
@@ -40,6 +40,7 @@ dependencies = [
     "pyvistaqt",
     "PySide6",
     "matplotlib",
+    "Pillow",
 ]
 
 [project.optional-dependencies]
@@ -68,6 +69,9 @@ zip-safe = false
 where = ["."]
 include = ["acsc*"]
 exclude = ["tests*", "build*", "dist*"]
+
+[tool.setuptools.package-data]
+"acsc.insegt.models" = ["*.dll", "*.so"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

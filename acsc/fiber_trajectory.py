@@ -1570,6 +1570,171 @@ def detect_fiber_centers(
     return np.array(centers), np.array(diameters)
 
 
+def detect_fiber_centers_insegt(
+    image: np.ndarray,
+    min_diameter: float = 5.0,
+    max_diameter: float = 20.0,
+    valid_mask: np.ndarray = None,
+    return_labels: bool = False,
+    patch_size: int = 9,
+    branching_factor: int = 5,
+    number_layers: int = 5,
+    training_patches: int = 30000,
+    sigmas: list = None
+) -> tuple:
+    """
+    Detect fiber centers using InSegt (Interactive Segmentation) with KM-tree.
+
+    This function uses Gaussian derivative features and KM-tree dictionary learning
+    for fiber segmentation, followed by centroid detection.
+
+    Args:
+        image: 2D grayscale image (fiber cross-section).
+        min_diameter: Minimum fiber diameter in pixels to accept.
+        max_diameter: Maximum fiber diameter in pixels to accept.
+        valid_mask: Optional mask for valid image region. If None, uses image > 0.
+        return_labels: If True, also return segmentation labels array.
+        patch_size: Patch size for KM-tree (must be odd).
+        branching_factor: Branching factor for KM-tree.
+        number_layers: Number of layers in KM-tree.
+        training_patches: Number of training patches for KM-tree.
+        sigmas: List of sigma values for Gaussian features. Default [1, 2, 4].
+
+    Returns:
+        Tuple of (centers, diameters) or (centers, diameters, labels) if return_labels=True:
+        - centers: (N, 2) array of fiber center coordinates (x, y)
+        - diameters: (N,) array of estimated fiber diameters
+        - labels: 2D array of segmentation labels (only if return_labels=True)
+    """
+    try:
+        from acsc.insegt import KMTree, GaussFeatureExtractor, DictionaryPropagator
+        import acsc.insegt.models.utils as insegt_utils
+    except ImportError as e:
+        raise ImportError(f"InSegt module not available: {e}")
+
+    if sigmas is None:
+        sigmas = [1, 2, 4]
+
+    # Create valid mask if not provided
+    if valid_mask is None:
+        valid_mask = image > 0
+
+    # Normalize image to float [0, 1]
+    if image.dtype != np.float64:
+        img_float = insegt_utils.normalize_to_float(image.astype(np.uint8))
+    else:
+        img_float = image
+
+    # Extract Gaussian features (GaussFeatureExtractor is callable)
+    gauss = GaussFeatureExtractor(sigmas=sigmas)
+    features = gauss(img_float, update_normalization=True, normalize=True)  # (channels, rows, cols)
+
+    # Build KM-tree
+    kmtree = KMTree(
+        patch_size=patch_size,
+        branching_factor=branching_factor,
+        number_layers=number_layers,
+        normalization=False
+    )
+    kmtree.build(features, training_patches)
+
+    # Search for assignments
+    assignment = kmtree.search(features)
+
+    # Use Otsu thresholding on original image to create initial labels
+    valid_pixels = image[valid_mask]
+    if len(valid_pixels) == 0:
+        if return_labels:
+            return np.array([]).reshape(0, 2), np.array([]), np.zeros_like(image, dtype=np.int32)
+        return np.array([]).reshape(0, 2), np.array([])
+
+    threshold = threshold_otsu(valid_pixels)
+    initial_labels = np.zeros_like(image, dtype=np.uint8)
+    initial_labels[(image > threshold) & valid_mask] = 1  # Fiber
+    initial_labels[(image <= threshold) & valid_mask] = 2  # Background
+
+    # Convert labels to one-hot encoding
+    labels_onehot = insegt_utils.labels_to_onehot(initial_labels)
+
+    # Create dictionary propagator and propagate labels
+    dict_prop = DictionaryPropagator(
+        dictionary_size=kmtree.tree.shape[0],
+        patch_size=patch_size
+    )
+    dict_prop.improb_to_dictprob(assignment, labels_onehot)
+    probs = dict_prop.dictprob_to_improb(assignment)
+
+    # Get segmentation from probabilities
+    segmentation = insegt_utils.segment_probabilities(probs)
+
+    # Iterate to refine segmentation (2 iterations)
+    for _ in range(2):
+        labels_onehot = insegt_utils.labels_to_onehot(segmentation)
+        dict_prop.improb_to_dictprob(assignment, labels_onehot)
+        probs = dict_prop.dictprob_to_improb(assignment)
+        segmentation = insegt_utils.segment_probabilities(probs)
+
+    # Create binary mask of fibers (class 1)
+    binary = (segmentation == 1) & valid_mask
+
+    # Distance transform
+    distance = distance_transform_edt(binary)
+
+    # Find local maxima (fiber centers)
+    min_distance = int(min_diameter / 2)
+    coords = peak_local_max(
+        distance,
+        min_distance=max(min_distance, 3),
+        labels=binary,
+        exclude_border=False
+    )
+
+    if len(coords) == 0:
+        if return_labels:
+            return np.array([]).reshape(0, 2), np.array([]), np.zeros_like(image, dtype=np.int32)
+        return np.array([]).reshape(0, 2), np.array([])
+
+    # Create markers for watershed
+    markers = np.zeros_like(binary, dtype=np.int32)
+    for i, (y, x) in enumerate(coords):
+        markers[y, x] = i + 1
+
+    # Watershed segmentation
+    labels = watershed(-distance, markers, mask=binary)
+
+    # Get region properties
+    props = regionprops(labels)
+
+    # Filter by diameter and collect results
+    centers = []
+    diameters = []
+    valid_labels_list = []
+
+    for prop in props:
+        area = prop.area
+        diameter = 2 * np.sqrt(area / np.pi)
+
+        if min_diameter < diameter < max_diameter:
+            y, x = prop.centroid
+            centers.append([x, y])
+            diameters.append(diameter)
+            valid_labels_list.append(prop.label)
+
+    if len(centers) == 0:
+        if return_labels:
+            return np.array([]).reshape(0, 2), np.array([]), np.zeros_like(image, dtype=np.int32)
+        return np.array([]).reshape(0, 2), np.array([])
+
+    # Create filtered labels array
+    if return_labels:
+        filtered_labels = np.zeros_like(labels)
+        for new_label, old_label in enumerate(valid_labels_list, start=1):
+            filtered_labels[labels == old_label] = new_label
+        return np.array(centers), np.array(diameters), filtered_labels
+
+    return np.array(centers), np.array(diameters)
+
+
 def create_fiber_distribution(
     shape: tuple,
     fiber_diameter: float,
