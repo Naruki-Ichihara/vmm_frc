@@ -41,11 +41,9 @@ const config: Config = {
           editUrl: 'https://github.com/Naruki-Ichihara/vmm-frc/tree/main/docs/',
           remarkPlugins: [remarkMath],
           rehypePlugins: [rehypeKatex],
+          routeBasePath: '/',
         },
-        blog: {
-          showReadingTime: true,
-          editUrl: 'https://github.com/Naruki-Ichihara/vmm-frc/tree/main/docs/',
-        },
+        blog: false,
         theme: {
           customCss: './src/css/custom.css',
         },
@@ -80,17 +78,10 @@ const config: Config = {
       items: [
         {
           type: 'docSidebar',
-          sidebarId: 'tutorialSidebar',
-          position: 'left',
-          label: 'Documentation',
-        },
-        {
-          type: 'docSidebar',
           sidebarId: 'apiSidebar',
           position: 'left',
-          label: 'API',
+          label: 'API Reference',
         },
-        {to: '/blog', label: 'Blog', position: 'left'},
         {
           href: 'https://github.com/Naruki-Ichihara/vmm-frc',
           label: 'GitHub',
@@ -102,15 +93,11 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: 'Docs',
+          title: 'API',
           items: [
             {
-              label: 'Documentation',
-              to: '/docs/intro',
-            },
-            {
               label: 'API Reference',
-              to: '/docs/api',
+              to: '/',
             },
           ],
         },
@@ -130,10 +117,6 @@ const config: Config = {
         {
           title: 'More',
           items: [
-            {
-              label: 'Blog',
-              to: '/blog',
-            },
             {
               label: 'GitHub',
               href: 'https://github.com/Naruki-Ichihara/vmm-frc',

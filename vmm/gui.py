@@ -5383,59 +5383,116 @@ class VisualizationTab(QWidget):
 
             for fiber_traj, offset, roi_name in trajectories_to_process:
                 z_offset, y_offset, x_offset = offset
-                trajectories = fiber_traj.trajectories
-                angles = fiber_traj.angles if fiber_traj.angles else []
-                azimuths = getattr(fiber_traj, 'azimuths', None)
-                if azimuths is None:
-                    azimuths = []
 
-                if not trajectories:
-                    continue
+                # Prefer fiber_trajectories (per-fiber data) over trajectories (per-slice data)
+                per_fiber_trajs = getattr(fiber_traj, 'fiber_trajectories', None)
+                per_fiber_angles = getattr(fiber_traj, 'fiber_angles', None)
+                per_fiber_azimuths = getattr(fiber_traj, 'fiber_azimuths', None)
 
-                # Get number of fibers from first slice
-                n_fibers = len(trajectories[0][1]) if trajectories else 0
+                if per_fiber_trajs and len(per_fiber_trajs) > 0:
+                    # Use per-fiber trajectory data (more accurate for variable-length trajectories)
+                    for fiber_idx, traj in enumerate(per_fiber_trajs):
+                        if len(traj) < 2:
+                            continue  # Skip fibers with less than 2 points
 
-                # Build fiber lines (each fiber is a polyline through all slices)
-                for fiber_idx in range(n_fibers):
-                    fiber_points = []
-                    fiber_tilts = []
-                    fiber_azimuths = []
+                        fiber_points = []
+                        fiber_tilts = []
+                        fiber_azimuths_list = []
 
-                    for slice_idx, (z, points) in enumerate(trajectories):
-                        if fiber_idx < len(points):
-                            pt = points[fiber_idx]
-                            # Convert to global coordinates (X, Y, Z for Paraview)
-                            # Use actual z position from trajectory, not slice_idx
+                        for pt_idx, (z, pt) in enumerate(traj):
+                            # Convert to global coordinates for Paraview
+                            # CT volume is stored as (Z, Y, X) in numpy, exported with flatten('F')
+                            # which maps to VTK's (X, Y, Z) ordering
+                            # So numpy Z -> VTK X, numpy Y -> VTK Y, numpy X -> VTK Z
+                            # pt[0] = x in image (column), pt[1] = y in image (row), z = slice index
+                            # For VTK: X=slice, Y=row, Z=column
                             fiber_points.append([
-                                pt[0] + x_offset,  # X
-                                pt[1] + y_offset,  # Y
-                                z + z_offset  # Z (actual slice position)
+                                z + z_offset,      # VTK X = slice index
+                                pt[1] + y_offset,  # VTK Y = row (y in image)
+                                pt[0] + x_offset   # VTK Z = column (x in image)
                             ])
 
                             # Get angles for this point
-                            if slice_idx < len(angles) and fiber_idx < len(angles[slice_idx]):
-                                fiber_tilts.append(angles[slice_idx][fiber_idx])
+                            if per_fiber_angles and fiber_idx < len(per_fiber_angles) and pt_idx < len(per_fiber_angles[fiber_idx]):
+                                fiber_tilts.append(per_fiber_angles[fiber_idx][pt_idx])
                             else:
                                 fiber_tilts.append(0.0)
 
-                            if slice_idx < len(azimuths) and fiber_idx < len(azimuths[slice_idx]):
-                                fiber_azimuths.append(azimuths[slice_idx][fiber_idx])
+                            if per_fiber_azimuths and fiber_idx < len(per_fiber_azimuths) and pt_idx < len(per_fiber_azimuths[fiber_idx]):
+                                fiber_azimuths_list.append(per_fiber_azimuths[fiber_idx][pt_idx])
                             else:
-                                fiber_azimuths.append(0.0)
+                                fiber_azimuths_list.append(0.0)
 
-                    if len(fiber_points) > 1:
-                        # Add points
-                        n_pts = len(fiber_points)
-                        all_points.extend(fiber_points)
-                        all_tilt_angles.extend(fiber_tilts)
-                        all_azimuth_angles.extend(fiber_azimuths)
-                        all_fiber_ids.extend([global_fiber_idx] * n_pts)
+                        if len(fiber_points) > 1:
+                            # Add points
+                            n_pts = len(fiber_points)
+                            all_points.extend(fiber_points)
+                            all_tilt_angles.extend(fiber_tilts)
+                            all_azimuth_angles.extend(fiber_azimuths_list)
+                            all_fiber_ids.extend([global_fiber_idx] * n_pts)
 
-                        # Add line connectivity
-                        line = [n_pts] + list(range(point_offset, point_offset + n_pts))
-                        all_lines.extend(line)
-                        point_offset += n_pts
-                        global_fiber_idx += 1
+                            # Add line connectivity
+                            line = [n_pts] + list(range(point_offset, point_offset + n_pts))
+                            all_lines.extend(line)
+                            point_offset += n_pts
+                            global_fiber_idx += 1
+                else:
+                    # Fallback to slice-based trajectories data
+                    trajectories = fiber_traj.trajectories
+                    angles = fiber_traj.angles if fiber_traj.angles else []
+                    azimuths = getattr(fiber_traj, 'azimuths', None)
+                    if azimuths is None:
+                        azimuths = []
+
+                    if not trajectories:
+                        continue
+
+                    # Get number of fibers from first slice
+                    n_fibers = len(trajectories[0][1]) if trajectories else 0
+
+                    # Build fiber lines (each fiber is a polyline through all slices)
+                    for fiber_idx in range(n_fibers):
+                        fiber_points = []
+                        fiber_tilts = []
+                        fiber_azimuths_list = []
+
+                        for slice_idx, (z, points) in enumerate(trajectories):
+                            if fiber_idx < len(points):
+                                pt = points[fiber_idx]
+                                # Convert to global coordinates for Paraview
+                                # CT volume is stored as (Z, Y, X) in numpy, exported with flatten('F')
+                                # which maps to VTK's (X, Y, Z) ordering
+                                # For VTK: X=slice, Y=row, Z=column
+                                fiber_points.append([
+                                    z + z_offset,      # VTK X = slice index
+                                    pt[1] + y_offset,  # VTK Y = row (y in image)
+                                    pt[0] + x_offset   # VTK Z = column (x in image)
+                                ])
+
+                                # Get angles for this point
+                                if slice_idx < len(angles) and fiber_idx < len(angles[slice_idx]):
+                                    fiber_tilts.append(angles[slice_idx][fiber_idx])
+                                else:
+                                    fiber_tilts.append(0.0)
+
+                                if slice_idx < len(azimuths) and fiber_idx < len(azimuths[slice_idx]):
+                                    fiber_azimuths_list.append(azimuths[slice_idx][fiber_idx])
+                                else:
+                                    fiber_azimuths_list.append(0.0)
+
+                        if len(fiber_points) > 1:
+                            # Add points
+                            n_pts = len(fiber_points)
+                            all_points.extend(fiber_points)
+                            all_tilt_angles.extend(fiber_tilts)
+                            all_azimuth_angles.extend(fiber_azimuths_list)
+                            all_fiber_ids.extend([global_fiber_idx] * n_pts)
+
+                            # Add line connectivity
+                            line = [n_pts] + list(range(point_offset, point_offset + n_pts))
+                            all_lines.extend(line)
+                            point_offset += n_pts
+                            global_fiber_idx += 1
 
             if not all_points:
                 QMessageBox.warning(self, "No Data", "No valid fiber trajectory data to export.")

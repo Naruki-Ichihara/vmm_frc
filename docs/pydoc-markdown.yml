@@ -16,4 +16,3 @@ renderer:
   type: docusaurus
   docs_base_path: docs/api/reference
   sidebar_top_level_label: API Reference
-  relative_output_path: true
