@@ -30,14 +30,13 @@ pip install -e ".[build]" --quiet
 REM Get version from vmm/__init__.py and update installer.iss
 echo.
 echo Updating version in installer.iss...
-for /f "tokens=2 delims='=""'" %%v in ('python -c "from vmm import __version__; print(__version__)"') do set VERSION=%%v
 python -c "from vmm import __version__; print(__version__)" > temp_version.txt
 set /p VERSION=<temp_version.txt
 del temp_version.txt
 echo Version: %VERSION%
 
-REM Update installer.iss with current version
-python -c "import re; f=open('installer.iss','r'); c=f.read(); f.close(); c=re.sub(r'#define MyAppVersion \"[^\"]+\"', '#define MyAppVersion \"%VERSION%\"'.replace('%%VERSION%%','%VERSION%'), c); f=open('installer.iss','w'); f.write(c); f.close()"
+REM Update installer.iss with current version using a separate Python script
+python -c "import re; from vmm import __version__; f=open('installer.iss','r',encoding='utf-8'); c=f.read(); f.close(); c=re.sub(r'#define MyAppVersion \"[^\"]+\"', f'#define MyAppVersion \"{__version__}\"', c); f=open('installer.iss','w',encoding='utf-8'); f.write(c); f.close(); print(f'Updated installer.iss to version {__version__}')"
 
 echo.
 echo Step 0: Creating icon file...

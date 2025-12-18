@@ -227,3 +227,4 @@ The `window_size` parameter should be chosen based on the feature size in the im
 ### Gaussian Sigma
 
 For Gaussian-weighted averaging, `sigma ≈ window_size / 3` gives similar spatial scale to box averaging.
+

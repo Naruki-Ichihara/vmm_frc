@@ -2,20 +2,19 @@ import sys
 import os
 import colorsys
 from pathlib import Path
-from typing import Optional
 import numpy as np
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QLabel, QLineEdit,
                                QSpinBox, QComboBox, QFileDialog, QGroupBox,
                                QGridLayout, QFormLayout, QTextEdit, QProgressBar, QMessageBox,
                                QCheckBox, QRadioButton, QSlider, QDoubleSpinBox, QStackedWidget,
-                               QButtonGroup, QFrame, QScrollArea, QTabWidget,
-                               QToolBar, QSizePolicy, QSplitter, QDialog)
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QTimer
-from PySide6.QtGui import QFont, QPalette, QColor, QAction, QIcon, QPixmap
+                               QButtonGroup, QFrame, QScrollArea, QTabBar,
+                               QSizePolicy, QSplitter, QDialog)
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QIcon, QPixmap
 import cv2 as cv
 from vmm.io import import_image_sequence, trim_image
-from vmm.analysis import compute_structure_tensor, compute_orientation, drop_edges_3D, _orientation_function, _orientation_function_reference
+from vmm.analysis import compute_structure_tensor, compute_orientation, drop_edges_3D
 import matplotlib
 matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -517,16 +516,16 @@ class RibbonButton(QPushButton):
     def __init__(self, text, icon_name=None):
         super().__init__()
         self.setText(text)
-        self.setMinimumSize(80, 60)
-        self.setMaximumSize(120, 60)
+        self.setMinimumSize(55, 45)
+        self.setMaximumSize(80, 45)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.setStyleSheet("""
             QPushButton {
                 text-align: center;
-                padding: 5px;
+                padding: 2px;
                 border: 1px solid #d0d0d0;
                 background-color: white;
-                font-size: 11px;
+                font-size: 9px;
                 border-radius: 3px;
             }
             QPushButton:hover {
@@ -566,84 +565,13 @@ class RibbonComboBox(QComboBox):
             }
         """)
 
-class ColorBarWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setFixedWidth(80)
-        self.current_range = (0, 255)
-        self.colormap = "viridis"
-        self.initUI()
-
-    def initUI(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-
-        # Title
-        self.title_label = QLabel("Intensity")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setStyleSheet("font-weight: bold; font-size: 12px; margin-bottom: 5px;")
-        layout.addWidget(self.title_label)
-
-        # Color bar placeholder (would need custom painting for real colorbar)
-        self.colorbar_widget = QFrame()
-        self.colorbar_widget.setStyleSheet("""
-            QFrame {
-                border: 1px solid #d0d0d0;
-                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 #440154, stop: 0.25 #31688e, stop: 0.5 #35b779,
-                    stop: 0.75 #fde725, stop: 1 #fff200);
-            }
-        """)
-        self.colorbar_widget.setMinimumHeight(200)
-        layout.addWidget(self.colorbar_widget)
-
-        # Max value label
-        self.max_label = QLabel(f"{self.current_range[1]:.0f}")
-        self.max_label.setAlignment(Qt.AlignCenter)
-        self.max_label.setStyleSheet("font-size: 10px;")
-        layout.addWidget(self.max_label)
-
-        layout.addStretch()
-
-        # Min value label
-        self.min_label = QLabel(f"{self.current_range[0]:.0f}")
-        self.min_label.setAlignment(Qt.AlignCenter)
-        self.min_label.setStyleSheet("font-size: 10px;")
-        layout.addWidget(self.min_label)
-
-    def updateRange(self, min_val, max_val):
-        self.current_range = (min_val, max_val)
-        self.min_label.setText(f"{min_val:.0f}")
-        self.max_label.setText(f"{max_val:.0f}")
-
-    def update_colormap(self, colormap):
-        self.colormap = colormap
-        # Update gradient based on colormap
-        gradients = {
-            "viridis": "stop: 0 #440154, stop: 0.25 #31688e, stop: 0.5 #35b779, stop: 0.75 #fde725, stop: 1 #fff200",
-            "gray": "stop: 0 #000000, stop: 1 #ffffff",
-            "jet": "stop: 0 #000080, stop: 0.25 #0000ff, stop: 0.5 #00ff00, stop: 0.75 #ffff00, stop: 1 #ff0000",
-            "coolwarm": "stop: 0 #3b4cc0, stop: 0.5 #ffffff, stop: 1 #b40426",
-            "rainbow": "stop: 0 #9400d3, stop: 0.17 #0000ff, stop: 0.33 #00ff00, stop: 0.5 #ffff00, stop: 0.67 #ff7f00, stop: 1 #ff0000",
-            "bone": "stop: 0 #000000, stop: 0.33 #545474, stop: 0.67 #a8a8bc, stop: 1 #ffffff"
-        }
-        gradient = gradients.get(colormap, gradients["viridis"])
-        self.colorbar_widget.setStyleSheet(f"""
-            QFrame {{
-                border: 1px solid #d0d0d0;
-                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, {gradient});
-            }}
-        """)
-
-    def setTitle(self, title):
-        """Update the color bar title/label"""
-        self.title_label.setText(title)
-
 class HistogramPanel(QWidget):
     def __init__(self):
         super().__init__()
-        self.figure = Figure(figsize=(5, 10))
+        self.figure = Figure(figsize=(3, 4))
         self.canvas = FigureCanvas(self.figure)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.canvas.setMinimumSize(150, 200)
         self.initUI()
 
     def initUI(self):
@@ -714,6 +642,9 @@ class HistogramPanel(QWidget):
         plot_idx = 0
         stats_text = "Statistical Analysis:\n" + "="*40 + "\n\n"
 
+        # Get density option
+        use_density = config.get('use_density', False)
+
         # Plot reference orientation
         if config['orientations']['reference']:
             data = orientation_data.get('reference')
@@ -730,11 +661,12 @@ class HistogramPanel(QWidget):
                 # Plot histogram
                 n, bins, patches = ax.hist(data_flat, bins=config['bins'],
                                           range=hist_range, color='blue',
-                                          alpha=0.7, edgecolor='black')
+                                          alpha=0.7, edgecolor='black',
+                                          density=use_density)
 
                 ax.set_title('Reference Orientation', fontsize=12)
                 ax.set_xlabel('Angle (degrees)', fontsize=10)
-                ax.set_ylabel('Frequency', fontsize=10)
+                ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
                 ax.grid(True, alpha=0.3)
 
                 # Calculate statistics
@@ -785,11 +717,12 @@ class HistogramPanel(QWidget):
                 # Plot histogram
                 n, bins, patches = ax.hist(data_flat, bins=config['bins'],
                                           range=hist_range, color='green',
-                                          alpha=0.7, edgecolor='black')
+                                          alpha=0.7, edgecolor='black',
+                                          density=use_density)
 
                 ax.set_title('X-Z Orientation', fontsize=12)
                 ax.set_xlabel('Angle (degrees)', fontsize=10)
-                ax.set_ylabel('Frequency', fontsize=10)
+                ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
                 ax.grid(True, alpha=0.3)
 
                 # Calculate statistics
@@ -840,11 +773,12 @@ class HistogramPanel(QWidget):
                 # Plot histogram
                 n, bins, patches = ax.hist(data_flat, bins=config['bins'],
                                           range=hist_range, color='orange',
-                                          alpha=0.7, edgecolor='black')
+                                          alpha=0.7, edgecolor='black',
+                                          density=use_density)
 
                 ax.set_title('Y-Z Orientation', fontsize=12)
                 ax.set_xlabel('Angle (degrees)', fontsize=10)
-                ax.set_ylabel('Frequency', fontsize=10)
+                ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
                 ax.grid(True, alpha=0.3)
 
                 # Calculate statistics
@@ -935,6 +869,9 @@ class HistogramPanel(QWidget):
         # Statistics text
         stats_text = "Statistical Analysis:\n" + "="*60 + "\n\n"
 
+        # Get density option
+        use_density = config.get('use_density', False)
+
         # For each orientation type, overlay all ROIs on the same subplot
         for orient_idx, (orient_type, orient_label) in enumerate(zip(orientation_types, orientation_labels)):
             ax = axes[orient_idx]
@@ -971,7 +908,8 @@ class HistogramPanel(QWidget):
                 n, bins, patches = ax.hist(data_flat, bins=config['bins'],
                                           range=hist_range, color=color,
                                           alpha=0.5, edgecolor=color, linewidth=1.5,
-                                          label=roi_name, histtype='stepfilled')
+                                          label=roi_name, histtype='stepfilled',
+                                          density=use_density)
 
                 # Track max count for y-axis
                 max_count = max(max_count, np.max(n))
@@ -1013,9 +951,10 @@ class HistogramPanel(QWidget):
             # Configure the subplot
             ax.set_title(orient_label, fontsize=12, fontweight='bold')
             ax.set_xlabel('Angle (degrees)', fontsize=10)
-            ax.set_ylabel('Frequency', fontsize=10)
+            ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
             ax.grid(True, alpha=0.3)
-            ax.set_ylim(0, max_count * 1.1)  # Add 10% headroom
+            if max_count > 0:
+                ax.set_ylim(0, max_count * 1.1)  # Add 10% headroom
 
             # Add legend with ROI names and colors
             if len(selected_rois) > 0:
@@ -1284,8 +1223,10 @@ class ModellingHistogramPanel(QWidget):
     """Histogram panel for Modelling tab - displays fiber trajectory angle histograms (vertical layout)."""
     def __init__(self):
         super().__init__()
-        self.figure = Figure(figsize=(4, 6))
+        self.figure = Figure(figsize=(3, 4))
         self.canvas = FigureCanvas(self.figure)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.canvas.setMinimumSize(150, 200)
         self.initUI()
 
     def initUI(self):
@@ -1545,6 +1486,7 @@ class Viewer2D(QWidget):
 
         # ROI (Region of Interest) for orientation computation
         self.roi_enabled = False
+        self.roi_mode = 'rectangle'  # 'rectangle' or 'polygon'
         # Dictionary to store multiple ROIs: {name: {'bounds': [z_min, z_max, y_min, y_max, x_min, x_max], 'color': 'red'}}
         self.rois = {}
         self.roi_counter = 0  # Counter for automatic ROI naming
@@ -1583,6 +1525,7 @@ class Viewer2D(QWidget):
         # Volume fraction visualization
         self.vf_map = None
         self.vf_roi_bounds = None
+        self.vf_polygon_mask = None  # Polygon mask for VF overlay
         self.show_vf_overlay = False
 
         self.initUI()
@@ -1599,10 +1542,12 @@ class Viewer2D(QWidget):
         viewers_splitter = QSplitter(Qt.Horizontal)
 
         # XY view (left)
-        self.figure_xy = Figure(figsize=(4, 4), facecolor='#f5f5f5')
+        self.figure_xy = Figure(figsize=(3, 3), facecolor='#f5f5f5')
         # Add extra space on left and bottom for axis arrows
         self.figure_xy.subplots_adjust(left=0.25, right=0.95, bottom=0.15, top=0.95)
         self.canvas_xy = FigureCanvas(self.figure_xy)
+        self.canvas_xy.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.canvas_xy.setMinimumSize(100, 100)
         self.ax_xy = self.figure_xy.add_subplot(111)
         self.ax_xy.set_title('XY Plane (Z slice)', fontsize=10, fontweight='bold')
         self.ax_xy.set_aspect('equal')
@@ -1615,10 +1560,12 @@ class Viewer2D(QWidget):
         self.canvas_xy.mpl_connect('scroll_event', self.onScrollXY)
 
         # XZ view (center)
-        self.figure_xz = Figure(figsize=(4, 4), facecolor='#f5f5f5')
+        self.figure_xz = Figure(figsize=(3, 3), facecolor='#f5f5f5')
         # Add extra space on left and bottom for axis arrows
         self.figure_xz.subplots_adjust(left=0.25, right=0.95, bottom=0.15, top=0.95)
         self.canvas_xz = FigureCanvas(self.figure_xz)
+        self.canvas_xz.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.canvas_xz.setMinimumSize(100, 100)
         self.ax_xz = self.figure_xz.add_subplot(111)
         self.ax_xz.set_title('XZ Plane (Y slice)', fontsize=10, fontweight='bold')
         self.ax_xz.set_aspect('equal')
@@ -1631,10 +1578,12 @@ class Viewer2D(QWidget):
         self.canvas_xz.mpl_connect('scroll_event', self.onScrollXZ)
 
         # YZ view (right)
-        self.figure_yz = Figure(figsize=(4, 4), facecolor='#f5f5f5')
+        self.figure_yz = Figure(figsize=(3, 3), facecolor='#f5f5f5')
         # Add extra space on left and bottom for axis arrows
         self.figure_yz.subplots_adjust(left=0.25, right=0.95, bottom=0.15, top=0.95)
         self.canvas_yz = FigureCanvas(self.figure_yz)
+        self.canvas_yz.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.canvas_yz.setMinimumSize(100, 100)
         self.ax_yz = self.figure_yz.add_subplot(111)
         self.ax_yz.set_title('YZ Plane (X slice)', fontsize=10, fontweight='bold')
         self.ax_yz.set_aspect('equal')
@@ -1649,8 +1598,10 @@ class Viewer2D(QWidget):
         main_splitter.addWidget(viewers_splitter)
 
         # Bottom section: Dual Histograms (Intensity on left, Orientation on right)
-        self.figure_hist = Figure(figsize=(12, 3), facecolor='#f5f5f5')
+        self.figure_hist = Figure(figsize=(6, 2), facecolor='#f5f5f5')
         self.canvas_hist = FigureCanvas(self.figure_hist)
+        self.canvas_hist.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.canvas_hist.setMinimumSize(200, 80)
 
         # Create two histogram axes side by side
         # Left: Intensity histogram with colorbar
@@ -1934,6 +1885,94 @@ class Viewer2D(QWidget):
             self.roi_enabled = False
             self.renderVolume()
 
+    def setROIMode(self, mode):
+        """Set the ROI selection mode ('rectangle' or 'polygon')"""
+        self.roi_mode = mode.lower() if mode else 'rectangle'
+
+    def getROIPolygonMask(self, roi_name, shape_2d):
+        """Generate a 2D polygon mask for the given ROI.
+
+        Args:
+            roi_name: Name of the ROI
+            shape_2d: Tuple (height, width) for the mask shape
+
+        Returns:
+            numpy array of bool with True inside the polygon/rectangle
+        """
+        from skimage.draw import polygon as draw_polygon
+
+        if roi_name not in self.rois:
+            return np.ones(shape_2d, dtype=bool)
+
+        roi_data = self.rois[roi_name]
+        bounds = roi_data['bounds']
+        polygon_xy = roi_data.get('polygon_xy')
+
+        z_min, z_max, y_min, y_max, x_min, x_max = bounds
+
+        # Create mask for the bounding box region
+        mask = np.zeros(shape_2d, dtype=bool)
+
+        if polygon_xy is not None and len(polygon_xy) >= 3:
+            # Use polygon mask
+            # polygon_xy contains (x, y) coordinates
+            poly_x = np.array([v[0] for v in polygon_xy])
+            poly_y = np.array([v[1] for v in polygon_xy])
+
+            # Generate polygon mask using skimage
+            rr, cc = draw_polygon(poly_y, poly_x, shape=shape_2d)
+            mask[rr, cc] = True
+        else:
+            # Use rectangular mask
+            mask[y_min:y_max, x_min:x_max] = True
+
+        return mask
+
+    def getROIPolygonMask3D(self, roi_name):
+        """Generate a 3D mask for the given ROI (polygon extruded along Z).
+
+        Args:
+            roi_name: Name of the ROI
+
+        Returns:
+            numpy array of bool with shape matching the ROI bounds
+        """
+        if roi_name not in self.rois or self.current_volume is None:
+            return None
+
+        roi_data = self.rois[roi_name]
+        bounds = roi_data['bounds']
+        z_min, z_max, y_min, y_max, x_min, x_max = bounds
+
+        # Get 2D mask for XY slice within the bounding box
+        roi_height = y_max - y_min
+        roi_width = x_max - x_min
+        n_slices = z_max - z_min
+
+        polygon_xy = roi_data.get('polygon_xy')
+
+        if polygon_xy is not None and len(polygon_xy) >= 3:
+            from skimage.draw import polygon as draw_polygon
+
+            # Translate polygon to ROI-local coordinates
+            poly_x = np.array([v[0] - x_min for v in polygon_xy])
+            poly_y = np.array([v[1] - y_min for v in polygon_xy])
+
+            # Create 2D mask in local coordinates
+            mask_2d = np.zeros((roi_height, roi_width), dtype=bool)
+            rr, cc = draw_polygon(poly_y, poly_x, shape=(roi_height, roi_width))
+            mask_2d[rr, cc] = True
+
+            # Extrude to 3D
+            mask_3d = np.zeros((n_slices, roi_height, roi_width), dtype=bool)
+            for z in range(n_slices):
+                mask_3d[z] = mask_2d
+        else:
+            # Full rectangular region
+            mask_3d = np.ones((n_slices, roi_height, roi_width), dtype=bool)
+
+        return mask_3d
+
     def _finalizeCurrentROI(self):
         """Finalize the currently editing ROI and remove selector"""
         if self.roi_selector_xy is not None:
@@ -1949,7 +1988,7 @@ class Viewer2D(QWidget):
 
     def _createROISelector(self, roi_name):
         """Create interactive ROI selector for the specified ROI"""
-        from matplotlib.widgets import RectangleSelector
+        from matplotlib.widgets import RectangleSelector, PolygonSelector
 
         if roi_name not in self.rois or self.current_volume is None:
             return
@@ -1967,44 +2006,89 @@ class Viewer2D(QWidget):
         if self.roi_selector_yz is not None:
             self.roi_selector_yz.set_active(False)
 
-        # XY view (Z slice) - shows X and Y bounds
-        self.roi_selector_xy = RectangleSelector(
-            self.ax_xy,
-            self._onROISelectXY,
-            useblit=True,
-            button=[1],  # Left mouse button
-            minspanx=5, minspany=5,
-            spancoords='pixels',
-            interactive=True,
-            props=dict(facecolor=color, edgecolor=color, alpha=0.3, fill=True, linewidth=2)
-        )
-        self.roi_selector_xy.extents = (x_min, x_max, y_min, y_max)
+        if self.roi_mode == 'polygon':
+            # Polygon selection mode
+            self.roi_selector_xy = PolygonSelector(
+                self.ax_xy,
+                self._onPolygonSelectXY,
+                useblit=True,
+                props=dict(color=color, linestyle='-', linewidth=2, alpha=0.5)
+            )
+            # For polygon mode, only XY selector is used (2D polygon on current Z slice)
+            self.roi_selector_xz = None
+            self.roi_selector_yz = None
+        else:
+            # Rectangle selection mode (default)
+            # XY view (Z slice) - shows X and Y bounds
+            self.roi_selector_xy = RectangleSelector(
+                self.ax_xy,
+                self._onROISelectXY,
+                useblit=True,
+                button=[1],  # Left mouse button
+                minspanx=5, minspany=5,
+                spancoords='pixels',
+                interactive=True,
+                props=dict(facecolor=color, edgecolor=color, alpha=0.3, fill=True, linewidth=2)
+            )
+            self.roi_selector_xy.extents = (x_min, x_max, y_min, y_max)
 
-        # XZ view (Y slice) - shows X and Z bounds
-        self.roi_selector_xz = RectangleSelector(
-            self.ax_xz,
-            self._onROISelectXZ,
-            useblit=True,
-            button=[1],
-            minspanx=5, minspany=5,
-            spancoords='pixels',
-            interactive=True,
-            props=dict(facecolor=color, edgecolor=color, alpha=0.3, fill=True, linewidth=2)
-        )
-        self.roi_selector_xz.extents = (x_min, x_max, z_min, z_max)
+            # XZ view (Y slice) - shows X and Z bounds
+            self.roi_selector_xz = RectangleSelector(
+                self.ax_xz,
+                self._onROISelectXZ,
+                useblit=True,
+                button=[1],
+                minspanx=5, minspany=5,
+                spancoords='pixels',
+                interactive=True,
+                props=dict(facecolor=color, edgecolor=color, alpha=0.3, fill=True, linewidth=2)
+            )
+            self.roi_selector_xz.extents = (x_min, x_max, z_min, z_max)
 
-        # YZ view (X slice) - shows Y and Z bounds
-        self.roi_selector_yz = RectangleSelector(
-            self.ax_yz,
-            self._onROISelectYZ,
-            useblit=True,
-            button=[1],
-            minspanx=5, minspany=5,
-            spancoords='pixels',
-            interactive=True,
-            props=dict(facecolor=color, edgecolor=color, alpha=0.3, fill=True, linewidth=2)
-        )
-        self.roi_selector_yz.extents = (y_min, y_max, z_min, z_max)
+            # YZ view (X slice) - shows Y and Z bounds
+            self.roi_selector_yz = RectangleSelector(
+                self.ax_yz,
+                self._onROISelectYZ,
+                useblit=True,
+                button=[1],
+                minspanx=5, minspany=5,
+                spancoords='pixels',
+                interactive=True,
+                props=dict(facecolor=color, edgecolor=color, alpha=0.3, fill=True, linewidth=2)
+            )
+            self.roi_selector_yz.extents = (y_min, y_max, z_min, z_max)
+
+    def _onPolygonSelectXY(self, vertices):
+        """Handle polygon selection in XY view"""
+        if self.current_roi_name is None or self.current_roi_name not in self.rois:
+            return
+
+        if len(vertices) < 3:
+            return
+
+        # Store polygon vertices in ROI data
+        self.rois[self.current_roi_name]['polygon_xy'] = vertices
+
+        # Calculate bounding box from polygon
+        xs = [v[0] for v in vertices]
+        ys = [v[1] for v in vertices]
+        x_min, x_max = int(min(xs)), int(max(xs))
+        y_min, y_max = int(min(ys)), int(max(ys))
+
+        # Clamp to volume bounds
+        if self.current_volume is not None:
+            volume_shape = self.current_volume.shape
+            x_min = max(0, x_min)
+            x_max = min(volume_shape[2], x_max)
+            y_min = max(0, y_min)
+            y_max = min(volume_shape[1], y_max)
+
+        # Update bounds (keep Z unchanged)
+        bounds = self.rois[self.current_roi_name]['bounds']
+        z_min, z_max = bounds[0], bounds[1]
+        self.rois[self.current_roi_name]['bounds'] = [z_min, z_max, y_min, y_max, x_min, x_max]
+
+        self.renderVolume()
 
     def _onROISelectXY(self, eclick, erelease):
         """Handle ROI selection in XY view (updates X and Y bounds)"""
@@ -2247,31 +2331,44 @@ class Viewer2D(QWidget):
                                  vmin=data_min, vmax=data_max, alpha=base_alpha, aspect='equal')
 
     def _drawAllROIOverlays(self):
-        """Draw colored overlay rectangles for all ROIs on all three views"""
-        from matplotlib.patches import Rectangle
+        """Draw colored overlay shapes for all ROIs on all three views"""
+        from matplotlib.patches import Rectangle, Polygon
 
-        # Draw each ROI as a colored rectangle
+        # Draw each ROI
         for roi_name, roi_data in self.rois.items():
             bounds = roi_data['bounds']
             color = roi_data['color']
             z_min, z_max, y_min, y_max, x_min, x_max = bounds
 
-            # XY view
-            rect_xy = Rectangle((x_min, y_min), x_max - x_min, y_max - y_min,
-                                fill=False, edgecolor=color, linewidth=2, linestyle='--')
-            self.ax_xy.add_patch(rect_xy)
-            # Add label
-            self.ax_xy.text(x_min + 5, y_min + 5, roi_name, color=color, fontsize=9,
-                           fontweight='bold', bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
+            # Check if this ROI has polygon vertices
+            polygon_xy = roi_data.get('polygon_xy')
 
-            # XZ view
+            # XY view - draw polygon if available, otherwise rectangle
+            if polygon_xy is not None and len(polygon_xy) >= 3:
+                # Draw polygon
+                poly_patch = Polygon(polygon_xy, fill=False, edgecolor=color,
+                                    linewidth=2, linestyle='--', closed=True)
+                self.ax_xy.add_patch(poly_patch)
+                # Add label at first vertex
+                self.ax_xy.text(polygon_xy[0][0] + 5, polygon_xy[0][1] + 5, roi_name,
+                               color=color, fontsize=9, fontweight='bold',
+                               bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
+            else:
+                # Draw rectangle
+                rect_xy = Rectangle((x_min, y_min), x_max - x_min, y_max - y_min,
+                                    fill=False, edgecolor=color, linewidth=2, linestyle='--')
+                self.ax_xy.add_patch(rect_xy)
+                self.ax_xy.text(x_min + 5, y_min + 5, roi_name, color=color, fontsize=9,
+                               fontweight='bold', bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
+
+            # XZ view - always rectangle (polygon is 2D on XY plane)
             rect_xz = Rectangle((x_min, z_min), x_max - x_min, z_max - z_min,
                                 fill=False, edgecolor=color, linewidth=2, linestyle='--')
             self.ax_xz.add_patch(rect_xz)
             self.ax_xz.text(x_min + 5, z_min + 5, roi_name, color=color, fontsize=9,
                            fontweight='bold', bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
 
-            # YZ view
+            # YZ view - always rectangle (polygon is 2D on XY plane)
             rect_yz = Rectangle((y_min, z_min), y_max - y_min, z_max - z_min,
                                 fill=False, edgecolor=color, linewidth=2, linestyle='--')
             self.ax_yz.add_patch(rect_yz)
@@ -2415,7 +2512,10 @@ class Viewer2D(QWidget):
                              facecolor='white', edgecolor='gray', framealpha=0.9)
 
     def _renderVfOverlay(self):
-        """Render volume fraction overlay on all slice views."""
+        """Render volume fraction overlay on all slice views.
+
+        Handles polygon masks by using NaN values (which are transparent in imshow).
+        """
         if not self.show_vf_overlay or self.vf_map is None or self.vf_roi_bounds is None:
             return
 
@@ -2426,8 +2526,10 @@ class Viewer2D(QWidget):
             vf_z_idx = self.slice_z - z_min
             if 0 <= vf_z_idx < self.vf_map.shape[0]:
                 vf_slice_xy = self.vf_map[vf_z_idx, :, :]
+                # Use masked array to handle NaN values (from polygon mask)
+                vf_slice_xy_masked = np.ma.masked_invalid(vf_slice_xy)
                 extent_xy = [x_min, x_max, y_min, y_max]
-                self.ax_xy.imshow(vf_slice_xy, cmap='jet', origin='lower',
+                self.ax_xy.imshow(vf_slice_xy_masked, cmap='jet', origin='lower',
                                  extent=extent_xy, alpha=0.5, zorder=2,
                                  vmin=0, vmax=1, interpolation='bilinear')
 
@@ -2439,8 +2541,9 @@ class Viewer2D(QWidget):
             vf_y_idx = (y_max - y_min) // 2
         if 0 <= vf_y_idx < self.vf_map.shape[1]:
             vf_slice_xz = self.vf_map[:, vf_y_idx, :]
+            vf_slice_xz_masked = np.ma.masked_invalid(vf_slice_xz)
             extent_xz = [x_min, x_max, z_min, z_max]
-            self.ax_xz.imshow(vf_slice_xz, cmap='jet', origin='lower',
+            self.ax_xz.imshow(vf_slice_xz_masked, cmap='jet', origin='lower',
                              extent=extent_xz, alpha=0.5, zorder=2,
                              vmin=0, vmax=1, interpolation='bilinear')
 
@@ -2452,8 +2555,9 @@ class Viewer2D(QWidget):
             vf_x_idx = (x_max - x_min) // 2
         if 0 <= vf_x_idx < self.vf_map.shape[2]:
             vf_slice_yz = self.vf_map[:, :, vf_x_idx]
+            vf_slice_yz_masked = np.ma.masked_invalid(vf_slice_yz)
             extent_yz = [y_min, y_max, z_min, z_max]
-            self.ax_yz.imshow(vf_slice_yz, cmap='jet', origin='lower',
+            self.ax_yz.imshow(vf_slice_yz_masked, cmap='jet', origin='lower',
                              extent=extent_yz, alpha=0.5, zorder=2,
                              vmin=0, vmax=1, interpolation='bilinear')
 
@@ -3238,81 +3342,18 @@ class Viewer2D(QWidget):
 
 
 class VolumeTab(QWidget):
-    """Tab for volume data visualization and import."""
+    """Tab for volume data visualization and import - ribbon is now managed by MainWindow."""
     def __init__(self, viewer=None):
         super().__init__()
         self.viewer = viewer
+        self.main_window = None
         self.initUI()
 
     def initUI(self):
+        # Ribbon is now managed by MainWindow's ribbon_stack
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Ribbon toolbar
-        toolbar = QFrame()
-        toolbar.setStyleSheet("QFrame { background-color: #f0f0f0; border-bottom: 1px solid #d0d0d0; }")
-        toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setSpacing(10)
-
-        # File Operations Group
-        file_group = QGroupBox("File")
-        file_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        file_layout = QHBoxLayout(file_group)
-
-        self.open_btn = RibbonButton("Open\nFiles")
-        self.open_btn.clicked.connect(self.openImportDialog)
-        file_layout.addWidget(self.open_btn)
-
-        toolbar_layout.addWidget(file_group)
-
-        # Render Mode Group removed - 2D viewer always shows slices
-
-        # Appearance Group
-        appearance_group = QGroupBox("Appearance")
-        appearance_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        appearance_layout = QVBoxLayout(appearance_group)
-
-        appearance_layout.addWidget(QLabel("Colormap:"))
-        self.colormap_combo = RibbonComboBox()
-        self.colormap_combo.addItems(["gray", "viridis", "jet", "coolwarm", "rainbow", "bone"])
-        self.colormap_combo.currentTextChanged.connect(self.updateColormap)
-        appearance_layout.addWidget(self.colormap_combo)
-
-        toolbar_layout.addWidget(appearance_group)
-
-        # Camera Group
-        camera_group = QGroupBox("Camera")
-        camera_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        camera_layout = QHBoxLayout(camera_group)
-
-        self.reset_view_btn = RibbonButton("Reset\nView")
-        self.reset_view_btn.clicked.connect(self.resetView)
-        camera_layout.addWidget(self.reset_view_btn)
-
-        toolbar_layout.addWidget(camera_group)
-
-        # Export Group
-        export_group = QGroupBox("Export")
-        export_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        export_layout = QHBoxLayout(export_group)
-
-        self.screenshot_btn = RibbonButton("Screen\nshot")
-        self.screenshot_btn.clicked.connect(self.takeScreenshot)
-        export_layout.addWidget(self.screenshot_btn)
-
-        self.export_btn = RibbonButton("Export\nVTK")
-        self.export_btn.setToolTip("Export CT volume to VTK format for Paraview")
-        self.export_btn.clicked.connect(self.export3D)
-        export_layout.addWidget(self.export_btn)
-
-        toolbar_layout.addWidget(export_group)
-
-        toolbar_layout.addStretch()
-        layout.addWidget(toolbar)
-
-        # Note: Control widgets (opacity, slices, isosurface) are now in the left panel
-
-        layout.addStretch()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
     def connectViewer(self, viewer):
         self.viewer = viewer
@@ -3345,10 +3386,13 @@ class VolumeTab(QWidget):
         """Compatibility method - no render modes in 2D viewer"""
         pass
 
-    def updateColormap(self):
+    def updateColormap(self, colormap=None):
+        """Update colormap - colormap param or from MainWindow's combo"""
         if self.viewer:
-            colormap = self.colormap_combo.currentText()
-            self.viewer.setColormap(colormap)
+            if colormap is None and hasattr(self, 'main_window') and hasattr(self.main_window, 'colormap_combo'):
+                colormap = self.main_window.colormap_combo.currentText()
+            if colormap:
+                self.viewer.setColormap(colormap)
 
 # Color bar colormap sync removed - PyVista handles color bar automatically
 
@@ -3450,70 +3494,8 @@ class VisualizationTab(QWidget):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Ribbon toolbar (matching other tabs - simplified)
-        toolbar = QFrame()
-        toolbar.setStyleSheet("QFrame { background-color: #f0f0f0; border-bottom: 1px solid #d0d0d0; }")
-        toolbar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setSpacing(10)
-        toolbar_layout.setContentsMargins(5, 5, 5, 5)
-
-        # Settings Group (first)
-        settings_group = QGroupBox("Settings")
-        settings_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        settings_layout = QVBoxLayout(settings_group)
-
-        self.settings_btn = RibbonButton("Settings")
-        self.settings_btn.clicked.connect(self.openSettingsDialog)
-        settings_layout.addWidget(self.settings_btn)
-
-        toolbar_layout.addWidget(settings_group)
-
-        # Fiber Trajectory Group
-        fiber_group = QGroupBox("Fiber Trajectory")
-        fiber_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        fiber_layout = QHBoxLayout(fiber_group)
-
-        self.generate_btn = RibbonButton("Generate\nTrajectory")
-        self.generate_btn.setEnabled(False)
-        self.generate_btn.clicked.connect(self.generateTrajectory)
-        fiber_layout.addWidget(self.generate_btn)
-
-        toolbar_layout.addWidget(fiber_group)
-
-        # Export Group
-        export_group = QGroupBox("Export")
-        export_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        export_layout = QHBoxLayout(export_group)
-
-        self.export_screenshot_btn = RibbonButton("Export\nScreenshot")
-        self.export_screenshot_btn.setEnabled(False)
-        self.export_screenshot_btn.clicked.connect(self.showExportScreenshotDialog)
-        export_layout.addWidget(self.export_screenshot_btn)
-
-        self.export_vtk_btn = RibbonButton("Export\nVTK")
-        self.export_vtk_btn.setEnabled(False)
-        self.export_vtk_btn.clicked.connect(self.exportTrajectoryToVTK)
-        export_layout.addWidget(self.export_vtk_btn)
-
-        toolbar_layout.addWidget(export_group)
-
-        # Analysis Group
-        analysis_group = QGroupBox("Analysis")
-        analysis_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        analysis_layout = QHBoxLayout(analysis_group)
-
-        self.trajectory_histogram_btn = RibbonButton("Histogram")
-        self.trajectory_histogram_btn.setEnabled(False)
-        self.trajectory_histogram_btn.clicked.connect(self.openTrajectoryHistogramDialog)
-        analysis_layout.addWidget(self.trajectory_histogram_btn)
-
-        toolbar_layout.addWidget(analysis_group)
-
-        toolbar_layout.addStretch()
-        layout.addWidget(toolbar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         # Main content: left panel + 2x2 viewports
         content_splitter = QSplitter(Qt.Horizontal)
@@ -3891,7 +3873,9 @@ class VisualizationTab(QWidget):
         self.structure_tensor = structure_tensor
         self.volume_shape = volume_shape
         self.volume_data = volume_data
-        self.generate_btn.setEnabled(True)
+        # Enable generate button in MainWindow's ribbon
+        if self.main_window and hasattr(self.main_window, 'generate_btn'):
+            self.main_window.generate_btn.setEnabled(True)
 
         # Update slice sliders
         if volume_shape is not None:
@@ -4005,8 +3989,20 @@ class VisualizationTab(QWidget):
         from vmm.fiber_trajectory import create_fiber_distribution, FiberTrajectory, detect_fiber_centers
         from vmm.analysis import compute_structure_tensor
 
-        # Get selected ROIs
-        selected_rois = self.getSelectedROIs()
+        # Show ROI selection dialog
+        if self.main_window and hasattr(self.main_window, 'viewer'):
+            rois = self.main_window.viewer.rois if hasattr(self.main_window.viewer, 'rois') else {}
+            if rois:
+                dialog = ROISelectDialog(self.main_window, rois,
+                                         title="Select ROIs for Trajectory Generation",
+                                         button_text="Generate")
+                if dialog.exec() != QDialog.Accepted:
+                    return  # User cancelled
+                selected_rois = dialog.getSelectedROIs()
+            else:
+                selected_rois = []
+        else:
+            selected_rois = []
 
         if not selected_rois and self.structure_tensor is None:
             QMessageBox.warning(self, "Warning", "No ROIs selected and no structure tensor available.\nPlease select ROIs or compute orientation in Analysis tab first.")
@@ -4067,6 +4063,9 @@ class VisualizationTab(QWidget):
 
                 z_min, z_max, y_min, y_max, x_min, x_max = bounds
 
+                # Get polygon mask for this ROI (in ROI-local coordinates)
+                polygon_mask_3d = self.main_window.viewer.getROIPolygonMask3D(roi_name)
+
                 # Get volume data for this ROI
                 if self.main_window.current_volume is not None:
                     roi_volume = self.main_window.current_volume[z_min:z_max, y_min:y_max, x_min:x_max]
@@ -4122,6 +4121,13 @@ class VisualizationTab(QWidget):
                             self.updateMainStatus(f"[{roi_name}] No detected centers found, using Poisson disk sampling...")
                             # Get Vf map from analysis tab if available
                             vf_map, vf_roi_bounds = self._getVfMapFromAnalysisTab()
+
+                            # Get 2D polygon mask for initial sampling plane
+                            polygon_mask_2d = None
+                            if polygon_mask_3d is not None:
+                                # Use the first slice of the 3D mask as 2D mask
+                                polygon_mask_2d = polygon_mask_3d[0]
+
                             # Fall back to Poisson disk sampling
                             fiber_traj.initialize(
                                 shape=roi_shape,
@@ -4131,7 +4137,8 @@ class VisualizationTab(QWidget):
                                 seed=42 + hash(roi_name) % 1000,
                                 reference_vector=reference_vector,
                                 vf_map=vf_map,
-                                vf_roi_bounds=vf_roi_bounds
+                                vf_roi_bounds=vf_roi_bounds,
+                                polygon_mask=polygon_mask_2d
                             )
                         else:
                             self.updateMainStatus(f"[{roi_name}] Using {len(initial_centers)} detected fiber centers...")
@@ -4139,6 +4146,12 @@ class VisualizationTab(QWidget):
                             # Initialize with detected centers
                             # Centers are in ROI-local coordinates already
                             fiber_traj.bounds = roi_shape
+
+                            # Store polygon mask
+                            if polygon_mask_3d is not None:
+                                fiber_traj.polygon_mask = polygon_mask_3d[0]  # 2D mask
+                            else:
+                                fiber_traj.polygon_mask = None
 
                             # Determine propagation axis
                             fiber_traj.reference_vector = np.array(reference_vector, dtype=np.float32)
@@ -4150,6 +4163,24 @@ class VisualizationTab(QWidget):
                             # Set fiber diameter from detection settings
                             diameters = all_slices[initial_slice]['diameters']
                             fiber_traj.fiber_diameter = np.mean(diameters) if len(diameters) > 0 else fiber_diameter
+
+                            # Filter initial centers by polygon mask if available
+                            if polygon_mask_3d is not None:
+                                polygon_mask_2d = polygon_mask_3d[0]
+                                inside_polygon = np.zeros(len(initial_centers), dtype=bool)
+                                mask_h, mask_w = polygon_mask_2d.shape
+                                for i, (x, y) in enumerate(initial_centers):
+                                    ix, iy = int(round(x)), int(round(y))
+                                    if 0 <= iy < mask_h and 0 <= ix < mask_w:
+                                        inside_polygon[i] = polygon_mask_2d[iy, ix]
+                                centers_before = len(initial_centers)
+                                initial_centers = initial_centers[inside_polygon]
+                                diameters = diameters[inside_polygon]
+                                self.updateMainStatus(f"[{roi_name}] Polygon filter: {centers_before} -> {len(initial_centers)} centers")
+
+                            if len(initial_centers) == 0:
+                                self.updateMainStatus(f"[{roi_name}] No centers inside polygon, skipping...")
+                                continue
 
                             # Initialize points
                             fiber_traj.points = initial_centers
@@ -4192,6 +4223,12 @@ class VisualizationTab(QWidget):
                         self.updateMainStatus(f"[{roi_name}] Creating fiber distribution...")
                         # Get Vf map from analysis tab if available
                         vf_map, vf_roi_bounds = self._getVfMapFromAnalysisTab()
+
+                        # Get 2D polygon mask for initial sampling plane
+                        polygon_mask_2d = None
+                        if polygon_mask_3d is not None:
+                            polygon_mask_2d = polygon_mask_3d[0]
+
                         fiber_traj.initialize(
                             shape=roi_shape,
                             fiber_diameter=fiber_diameter,
@@ -4200,7 +4237,8 @@ class VisualizationTab(QWidget):
                             seed=42 + hash(roi_name) % 1000,
                             reference_vector=reference_vector,
                             vf_map=vf_map,
-                            vf_roi_bounds=vf_roi_bounds
+                            vf_roi_bounds=vf_roi_bounds,
+                            polygon_mask=polygon_mask_2d
                         )
 
                     # Get resample settings
@@ -4373,9 +4411,14 @@ class VisualizationTab(QWidget):
                 stats_text += f"Range: [{all_angles.min():.2f}°, {all_angles.max():.2f}°]"
                 self.stats_label.setText(stats_text)
 
-        self.export_screenshot_btn.setEnabled(True)
-        self.export_vtk_btn.setEnabled(True)
-        self.trajectory_histogram_btn.setEnabled(True)
+        # Enable export buttons in MainWindow's ribbon
+        if self.main_window:
+            if hasattr(self.main_window, 'export_screenshot_btn'):
+                self.main_window.export_screenshot_btn.setEnabled(True)
+            if hasattr(self.main_window, 'export_traj_vtk_btn'):
+                self.main_window.export_traj_vtk_btn.setEnabled(True)
+            if hasattr(self.main_window, 'trajectory_histogram_btn'):
+                self.main_window.trajectory_histogram_btn.setEnabled(True)
 
         # Update slice sliders to center of trajectory bounds before visualization
         self._updateSliceSlidersToTrajectoryBounds()
@@ -6021,174 +6064,18 @@ class VisualizationTab(QWidget):
 
 
 class AnalysisTab(QWidget):
+    """Analysis tab - ribbon is now managed by MainWindow's ribbon_stack"""
     def __init__(self, viewer=None):
         super().__init__()
         self.viewer = viewer
+        self.main_window = None
         self.initUI()
 
     def initUI(self):
+        # Ribbon is now managed by MainWindow's ribbon_stack
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Ribbon toolbar with gray frame (matching visualization tab)
-        toolbar = QFrame()
-        toolbar.setStyleSheet("QFrame { background-color: #f0f0f0; border-bottom: 1px solid #d0d0d0; }")
-        toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setSpacing(10)
-
-        # Analysis Operations Group
-        analysis_group = QGroupBox("Analysis")
-        analysis_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        analysis_layout = QHBoxLayout(analysis_group)
-
-        self.edit_roi_btn = RibbonButton("Edit\nROI")
-        self.edit_roi_btn.clicked.connect(self.toggleROIEdit)
-        self.edit_roi_btn.setCheckable(True)  # Make it a toggle button
-        analysis_layout.addWidget(self.edit_roi_btn)
-
-        self.compute_btn = RibbonButton("Compute\nOrientation")
-        self.compute_btn.clicked.connect(self.computeOrientation)
-        analysis_layout.addWidget(self.compute_btn)
-
-        self.edit_range_btn = RibbonButton("Edit\nRange")
-        self.edit_range_btn.clicked.connect(self.openRangeEditor)
-        self.edit_range_btn.setEnabled(False)  # Enable after orientation computation
-        analysis_layout.addWidget(self.edit_range_btn)
-
-        self.histogram_btn = RibbonButton("Histogram")
-        self.histogram_btn.clicked.connect(self.openHistogramDialog)
-        self.histogram_btn.setEnabled(False)  # Enable after orientation computation
-        analysis_layout.addWidget(self.histogram_btn)
-
-        self.void_analysis_btn = RibbonButton("Void\nAnalysis")
-        self.void_analysis_btn.clicked.connect(self.computeVoidAnalysis)
-        analysis_layout.addWidget(self.void_analysis_btn)
-
-        self.magnify_btn = RibbonButton("Magnify")
-        self.magnify_btn.setCheckable(True)
-        self.magnify_btn.clicked.connect(self.toggleMagnify)
-        analysis_layout.addWidget(self.magnify_btn)
-
-        toolbar_layout.addWidget(analysis_group)
-
-        # Reference Vector Group
-        ref_group = QGroupBox("Reference Vector")
-        ref_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        ref_layout = QVBoxLayout(ref_group)
-
-        self.ref_combo = QComboBox()
-        self.ref_combo.addItems(["Z-axis", "Y-axis", "X-axis"])
-        self.ref_combo.setCurrentText("Z-axis")  # Default to Z-axis
-        self.ref_combo.setStyleSheet("""
-            QComboBox {
-                padding: 4px;
-                border: 1px solid #d0d0d0;
-                border-radius: 3px;
-                background-color: white;
-                font-size: 11px;
-                min-width: 60px;
-            }
-            QComboBox:hover {
-                border: 1px solid #005499;
-                background-color: #e5f3ff;
-            }
-        """)
-        ref_layout.addWidget(self.ref_combo)
-
-        toolbar_layout.addWidget(ref_group)
-
-        # Fiber Detection Group (Watershed-based)
-        fiber_group = QGroupBox("Fiber Detection")
-        fiber_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        fiber_layout = QHBoxLayout(fiber_group)
-
-        self.fiber_detect_settings_btn = RibbonButton("Detection\nSettings")
-        self.fiber_detect_settings_btn.clicked.connect(self.openFiberDetectionSettings)
-        fiber_layout.addWidget(self.fiber_detect_settings_btn)
-
-        self.fiber_detect_btn = RibbonButton("Detect\nFibers")
-        self.fiber_detect_btn.clicked.connect(self.detectFibers)
-        fiber_layout.addWidget(self.fiber_detect_btn)
-
-        toolbar_layout.addWidget(fiber_group)
-
-        # InSegt Group (Interactive Segmentation)
-        insegt_group = QGroupBox("InSegt")
-        insegt_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        insegt_layout = QHBoxLayout(insegt_group)
-
-        self.insegt_settings_btn = RibbonButton("InSegt\nSettings")
-        self.insegt_settings_btn.setToolTip("Configure InSegt processing parameters")
-        self.insegt_settings_btn.clicked.connect(self.openInSegtSettings)
-        insegt_layout.addWidget(self.insegt_settings_btn)
-
-        self.insegt_labeling_btn = RibbonButton("Labeling")
-        self.insegt_labeling_btn.setToolTip(
-            "Open InSegt interactive labeling tool.\n"
-            "Draw fiber (red) and background (green) annotations."
-        )
-        self.insegt_labeling_btn.clicked.connect(self.openInSegtLabeling)
-        insegt_layout.addWidget(self.insegt_labeling_btn)
-
-        self.insegt_run_btn = RibbonButton("Run")
-        self.insegt_run_btn.setToolTip(
-            "Apply InSegt model to detect fibers in all slices.\n"
-            "Requires labeling to be completed first."
-        )
-        self.insegt_run_btn.clicked.connect(self.runInSegt)
-        self.insegt_run_btn.setEnabled(False)  # Disabled until labeling is done
-        insegt_layout.addWidget(self.insegt_run_btn)
-
-        toolbar_layout.addWidget(insegt_group)
-
-        # Fiber Volume Fraction Group
-        vf_group = QGroupBox("Volume Fraction")
-        vf_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        vf_layout = QHBoxLayout(vf_group)
-
-        self.vf_settings_btn = RibbonButton("Vf\nSettings")
-        self.vf_settings_btn.setToolTip("Configure volume fraction calculation parameters")
-        self.vf_settings_btn.clicked.connect(self.openVfSettings)
-        vf_layout.addWidget(self.vf_settings_btn)
-
-        self.vf_compute_btn = RibbonButton("Compute\nVf")
-        self.vf_compute_btn.setToolTip(
-            "Compute local fiber volume fraction from segmentation.\n"
-            "Uses Otsu or InSegt segmentation result."
-        )
-        self.vf_compute_btn.clicked.connect(self.computeVf)
-        vf_layout.addWidget(self.vf_compute_btn)
-
-        toolbar_layout.addWidget(vf_group)
-
-        # Export Group
-        export_group = QGroupBox("Export")
-        export_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        export_layout = QHBoxLayout(export_group)
-
-        self.export_orientation_btn = RibbonButton("Export\nOrientation")
-        self.export_orientation_btn.setToolTip(
-            "Export orientation data to VTK format for Paraview.\n"
-            "Includes tilt angle, azimuth angle, and orientation vectors."
-        )
-        self.export_orientation_btn.clicked.connect(self.exportOrientationToVTK)
-        self.export_orientation_btn.setEnabled(False)
-        export_layout.addWidget(self.export_orientation_btn)
-
-        self.export_vf_btn = RibbonButton("Export\nVf Map")
-        self.export_vf_btn.setToolTip(
-            "Export fiber volume fraction map to VTK format."
-        )
-        self.export_vf_btn.clicked.connect(self.exportVfMapToVTK)
-        self.export_vf_btn.setEnabled(False)
-        export_layout.addWidget(self.export_vf_btn)
-
-        toolbar_layout.addWidget(export_group)
-
-        toolbar_layout.addStretch()
-
-        layout.addWidget(toolbar)
-        layout.addStretch()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         # Initialize fiber detection settings (watershed-based)
         self.fiber_detection_settings = {
@@ -6226,10 +6113,12 @@ class AnalysisTab(QWidget):
         # Vf result storage
         self.vf_map = None
         self.vf_segmentation = None
+        self.vf_polygon_mask = None  # Polygon mask for Vf overlay
 
         # Segmentation volume (stored from Fiber Detection or InSegt)
         self.segmentation_volume = None
         self.segmentation_roi_bounds = None
+        self.segmentation_polygon_mask = None  # Polygon mask for Vf calculation
 
     def openFiberDetectionSettings(self):
         """Open fiber detection settings dialog"""
@@ -6253,15 +6142,23 @@ class AnalysisTab(QWidget):
             QMessageBox.warning(self, "Warning", "No ROI defined - please create an ROI first")
             return
 
-        # Get the last ROI
-        roi_name = f"ROI{main_window.viewer.roi_counter}"
-        if roi_name not in main_window.viewer.rois:
-            # Try to find any ROI
-            roi_name = list(main_window.viewer.rois.keys())[-1] if main_window.viewer.rois else None
+        # Show ROI selection dialog
+        dialog = ROISelectDialog(main_window, main_window.viewer.rois,
+                                 title="Select ROI for Fiber Detection",
+                                 button_text="Detect")
+        if dialog.exec() != QDialog.Accepted:
+            return  # User cancelled
 
-        if roi_name is None:
-            QMessageBox.warning(self, "Warning", "No valid ROI found")
+        selected_rois = dialog.getSelectedROIs()
+        if not selected_rois:
+            QMessageBox.warning(self, "Warning", "No ROI selected")
             return
+
+        # Use first selected ROI for fiber detection
+        roi_name = selected_rois[0]
+        if len(selected_rois) > 1:
+            QMessageBox.information(self, "Info",
+                f"Multiple ROIs selected. Using {roi_name} for fiber detection.")
 
         roi_data = main_window.viewer.rois[roi_name]
         bounds = roi_data.get('bounds')
@@ -6271,6 +6168,9 @@ class AnalysisTab(QWidget):
 
         z_min, z_max, y_min, y_max, x_min, x_max = bounds
         n_slices = z_max - z_min
+
+        # Get polygon mask if available (in ROI-local coordinates)
+        polygon_mask_3d = main_window.viewer.getROIPolygonMask3D(roi_name)
 
         main_window.status_label.setText(f"Detecting fibers in {roi_name} ({n_slices} slices)...")
         main_window.showProgress(True)
@@ -6298,7 +6198,13 @@ class AnalysisTab(QWidget):
                     QApplication.processEvents()
 
                 # Extract the slice from ROI
-                slice_image = main_window.current_volume[z, y_min:y_max, x_min:x_max]
+                slice_image = main_window.current_volume[z, y_min:y_max, x_min:x_max].copy()
+
+                # Apply polygon mask if available
+                if polygon_mask_3d is not None:
+                    slice_mask = polygon_mask_3d[i]
+                    # Set pixels outside polygon to 0 (background)
+                    slice_image[~slice_mask] = 0
 
                 # Determine threshold percentile (None for Otsu)
                 threshold_method = self.fiber_detection_settings.get('threshold_method', 'otsu')
@@ -6349,10 +6255,15 @@ class AnalysisTab(QWidget):
             seg_volume = np.zeros((n_slices, y_max - y_min, x_max - x_min), dtype=np.uint8)
             for z, labels in all_segmentation_labels.items():
                 if labels is not None:
-                    seg_volume[z - z_min] = (labels > 0).astype(np.uint8)
+                    seg_slice = (labels > 0).astype(np.uint8)
+                    # Apply polygon mask to segmentation
+                    if polygon_mask_3d is not None:
+                        seg_slice[~polygon_mask_3d[z - z_min]] = 0
+                    seg_volume[z - z_min] = seg_slice
 
             self.segmentation_volume = seg_volume
             self.segmentation_roi_bounds = bounds
+            self.segmentation_polygon_mask = polygon_mask_3d  # Store for Vf calculation
 
             # Trigger visualization update
             main_window.viewer.show_fiber_detection = True
@@ -6409,13 +6320,27 @@ class AnalysisTab(QWidget):
             QMessageBox.warning(self, "Error", "No volume loaded. Please import a volume first.")
             return
 
-        # Get ROI bounds
+        # Get ROI bounds using ROI selection dialog
         rois = main_window.viewer.rois if main_window.viewer else {}
         bounds = None
-        for name, roi_data in rois.items():
-            if name != '_no_roi' and roi_data.get('bounds') is not None:
-                bounds = roi_data['bounds']
-                break
+
+        if rois:
+            # Show ROI selection dialog
+            dialog = ROISelectDialog(main_window, rois,
+                                     title="Select ROI for InSegt Labeling",
+                                     button_text="Open Labeling")
+            if dialog.exec() != QDialog.Accepted:
+                return  # User cancelled
+
+            selected_rois = dialog.getSelectedROIs()
+            if selected_rois:
+                # Use first selected ROI
+                roi_name = selected_rois[0]
+                if len(selected_rois) > 1:
+                    QMessageBox.information(self, "Info",
+                        f"Multiple ROIs selected. Using {roi_name} for InSegt labeling.")
+                roi_data = rois.get(roi_name, {})
+                bounds = roi_data.get('bounds')
 
         if bounds is None:
             # Use full slice
@@ -6524,8 +6449,9 @@ class AnalysisTab(QWidget):
                 self.insegt_labels = self._insegt_annotator.getLabels()
                 self._insegt_labels_ready = True
 
-                # Enable Run button
-                self.insegt_run_btn.setEnabled(True)
+                # Enable Run button in MainWindow's ribbon
+                if main_window and hasattr(main_window, 'insegt_run_btn'):
+                    main_window.insegt_run_btn.setEnabled(True)
 
                 if main_window:
                     main_window.status_label.setText(
@@ -6564,20 +6490,41 @@ class AnalysisTab(QWidget):
         if hasattr(self, '_insegt_scale'):
             process_scale = self._insegt_scale
 
-        # Get ROI bounds
+        # Get ROI bounds using ROI selection dialog
         rois = main_window.viewer.rois if main_window.viewer else {}
         bounds = None
 
-        for name, roi_data in rois.items():
-            if name != '_no_roi' and roi_data.get('bounds') is not None:
-                bounds = roi_data['bounds']
-                break
+        if rois:
+            # Show ROI selection dialog
+            dialog = ROISelectDialog(main_window, rois,
+                                     title="Select ROI for InSegt Segmentation",
+                                     button_text="Run InSegt")
+            if dialog.exec() != QDialog.Accepted:
+                return  # User cancelled
 
+            selected_rois = dialog.getSelectedROIs()
+            if selected_rois:
+                # Use first selected ROI
+                roi_name = selected_rois[0]
+                if len(selected_rois) > 1:
+                    QMessageBox.information(self, "Info",
+                        f"Multiple ROIs selected. Using {roi_name} for InSegt segmentation.")
+                roi_data = rois.get(roi_name, {})
+                bounds = roi_data.get('bounds')
+
+        # Get polygon mask if ROI was selected
+        polygon_mask_3d = None
+        selected_roi_name = None
         if bounds is None:
             z_min, z_max = 0, main_window.current_volume.shape[0]
             y_min, y_max = 0, main_window.current_volume.shape[1]
             x_min, x_max = 0, main_window.current_volume.shape[2]
             bounds = (z_min, z_max, y_min, y_max, x_min, x_max)
+        else:
+            # Get polygon mask for the selected ROI
+            if selected_rois:
+                selected_roi_name = selected_rois[0]
+                polygon_mask_3d = main_window.viewer.getROIPolygonMask3D(selected_roi_name)
 
         z_min, z_max, y_min, y_max, x_min, x_max = bounds
         n_slices = z_max - z_min
@@ -6671,6 +6618,11 @@ class AnalysisTab(QWidget):
                 # Fiber is class 1
                 binary = (segmentation == 1)
 
+                # Apply polygon mask if available
+                if polygon_mask_3d is not None:
+                    slice_mask = polygon_mask_3d[i]
+                    binary = binary & slice_mask
+
                 if np.sum(binary) == 0:
                     continue
 
@@ -6746,10 +6698,15 @@ class AnalysisTab(QWidget):
             for z, slice_data in all_slice_results.items():
                 labels = slice_data.get('labels')
                 if labels is not None:
-                    seg_volume[z - z_min] = (labels > 0).astype(np.uint8)
+                    seg_slice = (labels > 0).astype(np.uint8)
+                    # Apply polygon mask to segmentation
+                    if polygon_mask_3d is not None:
+                        seg_slice[~polygon_mask_3d[z - z_min]] = 0
+                    seg_volume[z - z_min] = seg_slice
 
             self.segmentation_volume = seg_volume
             self.segmentation_roi_bounds = bounds
+            self.segmentation_polygon_mask = polygon_mask_3d  # Store for Vf calculation
 
             main_window.viewer.show_fiber_detection = True
             main_window.viewer.renderVolume()
@@ -6781,25 +6738,6 @@ class AnalysisTab(QWidget):
             QMessageBox.critical(self, "Error", f"InSegt detection failed:\n{str(e)}")
             main_window.status_label.setText(f"InSegt error: {str(e)}")
 
-    def saveInSegtModel(self):
-        """Save the current InSegt model to a file."""
-        if self.insegt_model is None:
-            QMessageBox.warning(self, "Error", "No InSegt model to save.")
-            return
-
-        filepath, _ = QFileDialog.getSaveFileName(
-            self, "Save InSegt Model", "", "InSegt Model (*.insegt);;All Files (*)"
-        )
-
-        if filepath:
-            if not filepath.endswith('.insegt'):
-                filepath += '.insegt'
-            try:
-                self.insegt_model.save(filepath)
-                QMessageBox.information(self, "Success", f"Model saved to:\n{filepath}")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to save model:\n{str(e)}")
-
     def openVfSettings(self):
         """Open volume fraction settings dialog."""
         dialog = VfSettingsDialog(self, self.vf_settings)
@@ -6825,6 +6763,24 @@ class AnalysisTab(QWidget):
                 "Please run 'Detect Fibers' or 'InSegt Run' first.")
             return
 
+        # Show ROI selection dialog to confirm which ROI to use
+        rois = main_window.viewer.rois if main_window.viewer else {}
+        selected_roi_name = None
+        polygon_mask_3d = self.segmentation_polygon_mask  # Use stored mask from segmentation
+
+        if rois:
+            dialog = ROISelectDialog(main_window, rois,
+                                     title="Select ROI for Volume Fraction",
+                                     button_text="Compute Vf")
+            if dialog.exec() != QDialog.Accepted:
+                return  # User cancelled
+
+            selected_rois = dialog.getSelectedROIs()
+            if selected_rois:
+                selected_roi_name = selected_rois[0]
+                # Get polygon mask for the selected ROI
+                polygon_mask_3d = main_window.viewer.getROIPolygonMask3D(selected_roi_name)
+
         segmentation = self.segmentation_volume
         z_min, z_max, y_min, y_max, x_min, x_max = self.segmentation_roi_bounds
         n_slices = z_max - z_min
@@ -6836,6 +6792,11 @@ class AnalysisTab(QWidget):
         QApplication.processEvents()
 
         try:
+            # Apply polygon mask to segmentation if available
+            if polygon_mask_3d is not None:
+                segmentation = segmentation.copy()
+                segmentation[~polygon_mask_3d] = 0
+
             # Compute local Vf
             main_window.status_label.setText("Computing local Vf distribution...")
             QApplication.processEvents()
@@ -6851,16 +6812,35 @@ class AnalysisTab(QWidget):
                 gaussian_sigma=gaussian_sigma
             )
 
+            # Apply polygon mask to vf_map (set outside to NaN)
+            if polygon_mask_3d is not None:
+                vf_map = vf_map.astype(np.float32)
+                vf_map[~polygon_mask_3d] = np.nan
+
             main_window.progress_bar.setValue(70)
             QApplication.processEvents()
 
-            # Step 4: Compute statistics
-            hist, bin_edges, stats = estimate_vf_distribution(
-                segmentation,
-                fiber_label=1,
-                window_size=window_size,
-                gaussian_sigma=gaussian_sigma
-            )
+            # Compute statistics (only on valid pixels)
+            if polygon_mask_3d is not None:
+                valid_segmentation = segmentation[polygon_mask_3d]
+                # Create a masked array for statistics
+                hist, bin_edges, stats = estimate_vf_distribution(
+                    segmentation,
+                    fiber_label=1,
+                    window_size=window_size,
+                    gaussian_sigma=gaussian_sigma
+                )
+                # Recalculate global_vf using only polygon region
+                fiber_pixels = np.sum(segmentation[polygon_mask_3d] == 1)
+                total_pixels = np.sum(polygon_mask_3d)
+                stats['global_vf'] = fiber_pixels / total_pixels if total_pixels > 0 else 0
+            else:
+                hist, bin_edges, stats = estimate_vf_distribution(
+                    segmentation,
+                    fiber_label=1,
+                    window_size=window_size,
+                    gaussian_sigma=gaussian_sigma
+                )
 
             main_window.progress_bar.setValue(100)
             main_window.showProgress(False)
@@ -6870,10 +6850,12 @@ class AnalysisTab(QWidget):
             self.vf_segmentation = segmentation
             self.vf_stats = stats
             self.vf_roi_bounds = (z_min, z_max, y_min, y_max, x_min, x_max)
+            self.vf_polygon_mask = polygon_mask_3d  # Store polygon mask for overlay
 
             # Store in viewer for display
             main_window.viewer.vf_map = vf_map
             main_window.viewer.vf_roi_bounds = self.vf_roi_bounds
+            main_window.viewer.vf_polygon_mask = polygon_mask_3d  # Store for overlay rendering
             main_window.viewer.show_vf_overlay = True
 
             # Add Vf toggle to pipeline
@@ -6900,8 +6882,9 @@ class AnalysisTab(QWidget):
                 f"Vf computed: mean={stats['mean']*100:.1f}%, global={stats['global_vf']*100:.1f}%"
             )
 
-            # Enable Vf export button
-            self.export_vf_btn.setEnabled(True)
+            # Enable Vf export button in MainWindow's ribbon
+            if hasattr(main_window, 'export_vf_btn'):
+                main_window.export_vf_btn.setEnabled(True)
 
             QMessageBox.information(self, "Volume Fraction Results", msg)
 
@@ -6918,13 +6901,18 @@ class AnalysisTab(QWidget):
         if main_window and main_window.viewer:
             main_window.viewer.toggleROI(checked)
 
-        # Update button text and disable compute button when editing
-        if checked:
-            self.edit_roi_btn.setText("Apply\nROI")
-            self.compute_btn.setEnabled(False)
-        else:
-            self.edit_roi_btn.setText("Edit\nROI")
-            self.compute_btn.setEnabled(True)
+        # Update button text and disable compute button when editing (in MainWindow's ribbon)
+        if main_window:
+            if checked:
+                if hasattr(main_window, 'edit_roi_btn'):
+                    main_window.edit_roi_btn.setText("Apply\nROI")
+                if hasattr(main_window, 'compute_btn'):
+                    main_window.compute_btn.setEnabled(False)
+            else:
+                if hasattr(main_window, 'edit_roi_btn'):
+                    main_window.edit_roi_btn.setText("Edit\nROI")
+                if hasattr(main_window, 'compute_btn'):
+                    main_window.compute_btn.setEnabled(True)
 
     def computeVoidAnalysis(self):
         """Compute void analysis for all ROIs"""
@@ -6970,12 +6958,14 @@ class AnalysisTab(QWidget):
         if checked:
             # Enable zoom mode
             main_window.viewer.enableZoom(True)
-            self.magnify_btn.setText("Reset\nZoom")
+            if hasattr(main_window, 'magnify_btn'):
+                main_window.magnify_btn.setText("Reset\nZoom")
             main_window.status_label.setText("Magnify mode: Use mouse wheel to zoom, drag to pan")
         else:
             # Disable zoom mode and reset view
             main_window.viewer.enableZoom(False)
-            self.magnify_btn.setText("Magnify")
+            if hasattr(main_window, 'magnify_btn'):
+                main_window.magnify_btn.setText("Magnify")
             main_window.status_label.setText("Zoom reset")
 
     def computeOrientation(self):
@@ -6994,107 +6984,147 @@ class AnalysisTab(QWidget):
 
         print(f"Volume shape: {main_window.current_volume.shape}")
 
+        # Show ROI selection dialog if ROIs exist
+        selected_rois = []
+        if main_window.viewer.rois:
+            dialog = ROISelectDialog(main_window, main_window.viewer.rois,
+                                     title="Select ROIs for Orientation Computation",
+                                     button_text="Compute")
+            if dialog.exec() != QDialog.Accepted:
+                return  # User cancelled
+            selected_rois = dialog.getSelectedROIs()
+
         if main_window.current_volume is not None:
-            volume = main_window.current_volume
+            base_volume = main_window.current_volume
 
-            # Check if ROI is defined and extract ROI subvolume
-            # For now, use the last created ROI (most recent)
-            if main_window.viewer.rois:
-                # Get the last ROI
-                roi_name = f"ROI{main_window.viewer.roi_counter}"
-                if roi_name in main_window.viewer.rois:
-                    bounds = main_window.viewer.rois[roi_name]['bounds']
-                    z_min, z_max, y_min, y_max, x_min, x_max = bounds
-                    print(f"Using {roi_name}: z[{z_min}:{z_max}], y[{y_min}:{y_max}], x[{x_min}:{x_max}]")
-                    volume = volume[z_min:z_max, y_min:y_max, x_min:x_max]
-                    print(f"ROI volume shape: {volume.shape}")
+            # If ROIs selected, compute for each ROI
+            if selected_rois:
+                for roi_name in selected_rois:
+                    if roi_name in main_window.viewer.rois:
+                        bounds = main_window.viewer.rois[roi_name]['bounds']
+                        z_min, z_max, y_min, y_max, x_min, x_max = bounds
+                        print(f"Computing orientation for {roi_name}: z[{z_min}:{z_max}], y[{y_min}:{y_max}], x[{x_min}:{x_max}]")
+                        volume = base_volume[z_min:z_max, y_min:y_max, x_min:x_max].copy()
 
-            noise_scale = main_window.noise_scale_slider.value()
+                        # Get polygon mask if available
+                        polygon_mask_3d = main_window.viewer.getROIPolygonMask3D(roi_name)
 
-            main_window.showProgress(True)
-            main_window.progress_bar.setRange(0, 3)
+                        print(f"ROI volume shape: {volume.shape}")
+                        self._computeOrientationForROI(main_window, volume, roi_name, polygon_mask_3d)
+            else:
+                # No ROIs - compute for entire volume
+                print("No ROIs selected - computing for entire volume")
+                volume = base_volume
+                roi_name = None
+                self._computeOrientationForROI(main_window, volume, roi_name, None)
 
-            try:
-                # Step 1: Compute structure tensor
-                main_window.progress_bar.setValue(1)
-                main_window.progress_bar.setFormat("Computing structure tensor... (1/3)")
-                QApplication.processEvents()
+    def _computeOrientationForROI(self, main_window, volume, roi_name, polygon_mask_3d=None):
+        """Compute orientation for a single ROI or entire volume
 
-                structure_tensor = compute_structure_tensor(volume, noise_scale=noise_scale)
+        Args:
+            main_window: Reference to main window
+            volume: 3D volume data
+            roi_name: Name of the ROI (or None for entire volume)
+            polygon_mask_3d: Optional 3D polygon mask (True inside polygon)
+        """
+        noise_scale = main_window.noise_scale_slider.value()
 
-                # Step 2: Compute orientation without reference (theta, phi)
-                main_window.progress_bar.setValue(2)
-                main_window.progress_bar.setFormat("Computing orientation angles... (2/3)")
-                QApplication.processEvents()
+        main_window.showProgress(True)
+        main_window.progress_bar.setRange(0, 3)
 
-                # Use the working compute_orientation function
-                theta, phi = compute_orientation(structure_tensor)
+        try:
+            # Step 1: Compute structure tensor
+            main_window.progress_bar.setValue(1)
+            roi_label = f" for {roi_name}" if roi_name else ""
+            main_window.progress_bar.setFormat(f"Computing structure tensor{roi_label}... (1/3)")
+            QApplication.processEvents()
 
-                # Step 3: Compute reference orientation and trim edges
-                main_window.progress_bar.setValue(3)
-                main_window.progress_bar.setFormat("Computing reference orientation and trimming... (3/3)")
-                QApplication.processEvents()
+            structure_tensor = compute_structure_tensor(volume, noise_scale=noise_scale)
 
-                # Get selected reference vector
-                ref_text = self.ref_combo.currentText()
-                if ref_text == "X-axis":
-                    reference_vector = [0, 0, 1]  # X-axis (depth direction in volume)
-                elif ref_text == "Y-axis":
-                    reference_vector = [0, 1, 0]  # Y-axis
-                else:  # "Z-axis"
-                    reference_vector = [1, 0, 0]  # Z-axis
+            # Step 2: Compute orientation without reference (theta, phi)
+            main_window.progress_bar.setValue(2)
+            main_window.progress_bar.setFormat(f"Computing orientation angles{roi_label}... (2/3)")
+            QApplication.processEvents()
 
-                # Compute reference orientation using proper VMM-FRC method
-                reference_orientation = compute_orientation(structure_tensor, reference_vector)
+            # Use the working compute_orientation function
+            theta, phi = compute_orientation(structure_tensor)
 
-                # Trim edges from all orientation volumes using noise_scale as trim width
-                trim_width = noise_scale
-                theta_trimmed = drop_edges_3D(trim_width, theta)
-                phi_trimmed = drop_edges_3D(trim_width, phi)
-                reference_trimmed = drop_edges_3D(trim_width, reference_orientation)
+            # Step 3: Compute reference orientation and trim edges
+            main_window.progress_bar.setValue(3)
+            main_window.progress_bar.setFormat(f"Computing reference orientation{roi_label}... (3/3)")
+            QApplication.processEvents()
 
-                # Store trimmed orientation data and trim information
-                main_window.orientation_data['theta'] = theta_trimmed
-                main_window.orientation_data['phi'] = phi_trimmed
-                main_window.orientation_data['reference'] = reference_trimmed
-                main_window.orientation_data['trim_width'] = trim_width
-                main_window.orientation_data['structure_tensor'] = structure_tensor
-                main_window.orientation_data['noise_scale'] = noise_scale
+            # Get selected reference vector from MainWindow's ribbon
+            ref_text = main_window.ref_combo.currentText() if hasattr(main_window, 'ref_combo') else "Z-axis"
+            if ref_text == "X-axis":
+                reference_vector = [0, 0, 1]  # X-axis (depth direction in volume)
+            elif ref_text == "Y-axis":
+                reference_vector = [0, 1, 0]  # Y-axis
+            else:  # "Z-axis"
+                reference_vector = [1, 0, 0]  # Z-axis
 
-                main_window.showProgress(False)
-                main_window.status_label.setText(f"Analysis complete (Noise scale: {noise_scale})")
+            # Compute reference orientation using proper VMM-FRC method
+            reference_orientation = compute_orientation(structure_tensor, reference_vector)
 
-                # Enable edit range and histogram buttons
-                self.edit_range_btn.setEnabled(True)
-                self.histogram_btn.setEnabled(True)
+            # Trim edges from all orientation volumes using noise_scale as trim width
+            trim_width = noise_scale
+            theta_trimmed = drop_edges_3D(trim_width, theta)
+            phi_trimmed = drop_edges_3D(trim_width, phi)
+            reference_trimmed = drop_edges_3D(trim_width, reference_orientation)
 
-                # Enable export buttons
-                self.export_orientation_btn.setEnabled(True)
+            # Apply polygon mask if available (set values outside polygon to NaN)
+            if polygon_mask_3d is not None:
+                # Trim the mask to match the trimmed orientation data
+                mask_trimmed = polygon_mask_3d[trim_width:-trim_width, trim_width:-trim_width, trim_width:-trim_width]
+                theta_trimmed = np.where(mask_trimmed, theta_trimmed, np.nan)
+                phi_trimmed = np.where(mask_trimmed, phi_trimmed, np.nan)
+                reference_trimmed = np.where(mask_trimmed, reference_trimmed, np.nan)
 
-                # Enable histogram button in Simulation tab as well
-                if hasattr(main_window, 'simulation_tab'):
-                    main_window.simulation_tab.histogram_btn.setEnabled(True)
+            # Store trimmed orientation data and trim information
+            main_window.orientation_data['theta'] = theta_trimmed
+            main_window.orientation_data['phi'] = phi_trimmed
+            main_window.orientation_data['reference'] = reference_trimmed
+            main_window.orientation_data['trim_width'] = trim_width
+            main_window.orientation_data['structure_tensor'] = structure_tensor
+            main_window.orientation_data['noise_scale'] = noise_scale
 
-                # Pass structure tensor to Modelling tab for fiber trajectory generation
-                if hasattr(main_window, 'modelling_tab'):
-                    main_window.modelling_tab.setStructureTensor(structure_tensor, volume.shape, volume)
+            main_window.showProgress(False)
+            main_window.status_label.setText(f"Analysis complete{roi_label} (Noise scale: {noise_scale})")
 
-                # Store orientation data in the ROI structure
-                if roi_name in main_window.viewer.rois:
-                    main_window.viewer.rois[roi_name]['theta'] = theta_trimmed.astype(np.float32)
-                    main_window.viewer.rois[roi_name]['phi'] = phi_trimmed.astype(np.float32)
-                    main_window.viewer.rois[roi_name]['angle'] = reference_trimmed.astype(np.float32)
-                    main_window.viewer.rois[roi_name]['trim_width'] = trim_width  # Store trim width for centering
+            # Enable edit range and histogram buttons in MainWindow's ribbon
+            if hasattr(main_window, 'edit_range_btn'):
+                main_window.edit_range_btn.setEnabled(True)
+            if hasattr(main_window, 'histogram_btn'):
+                main_window.histogram_btn.setEnabled(True)
 
-                    # Dynamically add Orientation-ROI toggle to pipeline
-                    main_window.viewer.addOrientationROIToggle(roi_name)
+            # Enable export buttons in MainWindow's ribbon
+            if hasattr(main_window, 'export_orientation_btn'):
+                main_window.export_orientation_btn.setEnabled(True)
 
-            except Exception as e:
-                main_window.showProgress(False)
-                main_window.status_label.setText(f"Analysis failed: {str(e)}")
-                print(f"Orientation computation error: {e}")
-        else:
-            print("No volume loaded for orientation analysis")
+            # Enable histogram button in Simulation tab as well
+            if hasattr(main_window, 'sim_histogram_btn'):
+                main_window.sim_histogram_btn.setEnabled(True)
+
+            # Pass structure tensor to Modelling tab for fiber trajectory generation
+            if hasattr(main_window, 'modelling_tab'):
+                main_window.modelling_tab.setStructureTensor(structure_tensor, volume.shape, volume)
+
+            # Store orientation data in the ROI structure
+            if roi_name and roi_name in main_window.viewer.rois:
+                main_window.viewer.rois[roi_name]['theta'] = theta_trimmed.astype(np.float32)
+                main_window.viewer.rois[roi_name]['phi'] = phi_trimmed.astype(np.float32)
+                main_window.viewer.rois[roi_name]['angle'] = reference_trimmed.astype(np.float32)
+                main_window.viewer.rois[roi_name]['trim_width'] = trim_width  # Store trim width for centering
+
+                # Dynamically add Orientation-ROI toggle to pipeline
+                main_window.viewer.addOrientationROIToggle(roi_name)
+
+        except Exception as e:
+            main_window.showProgress(False)
+            main_window.status_label.setText(f"Analysis failed: {str(e)}")
+            print(f"Orientation computation error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def openRangeEditor(self):
         """Open color bar range editor dialog"""
@@ -7278,6 +7308,259 @@ class AnalysisTab(QWidget):
             QMessageBox.critical(self, "Export Error", f"Failed to export: {str(e)}")
 
 
+class CoordinateROIDialog(QDialog):
+    """Dialog for creating ROI by entering coordinates"""
+    def __init__(self, parent, volume_shape=None):
+        super().__init__(parent)
+        self.volume_shape = volume_shape  # (z, y, x)
+        self.roi_bounds = None
+        self.roi_name = None
+        self.setWindowTitle("Create ROI by Coordinates")
+        self.setModal(True)
+        self.resize(400, 350)
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        # Title
+        title_label = QLabel("Enter ROI Coordinates")
+        title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        layout.addWidget(title_label)
+
+        # ROI Name
+        name_group = QGroupBox("ROI Name")
+        name_layout = QHBoxLayout(name_group)
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Enter ROI name (e.g., ROI_1)")
+        name_layout.addWidget(self.name_edit)
+        layout.addWidget(name_group)
+
+        # Get volume bounds for spinbox ranges
+        z_max = self.volume_shape[0] if self.volume_shape else 1000
+        y_max = self.volume_shape[1] if self.volume_shape else 1000
+        x_max = self.volume_shape[2] if self.volume_shape else 1000
+
+        # X coordinates
+        x_group = QGroupBox("X Range (Width)")
+        x_layout = QGridLayout(x_group)
+        x_layout.addWidget(QLabel("Min:"), 0, 0)
+        self.x_min_spin = QSpinBox()
+        self.x_min_spin.setRange(0, x_max - 1)
+        self.x_min_spin.setValue(0)
+        x_layout.addWidget(self.x_min_spin, 0, 1)
+        x_layout.addWidget(QLabel("Max:"), 0, 2)
+        self.x_max_spin = QSpinBox()
+        self.x_max_spin.setRange(1, x_max)
+        self.x_max_spin.setValue(x_max)
+        x_layout.addWidget(self.x_max_spin, 0, 3)
+        x_layout.addWidget(QLabel(f"(0 - {x_max})"), 0, 4)
+        layout.addWidget(x_group)
+
+        # Y coordinates
+        y_group = QGroupBox("Y Range (Height)")
+        y_layout = QGridLayout(y_group)
+        y_layout.addWidget(QLabel("Min:"), 0, 0)
+        self.y_min_spin = QSpinBox()
+        self.y_min_spin.setRange(0, y_max - 1)
+        self.y_min_spin.setValue(0)
+        y_layout.addWidget(self.y_min_spin, 0, 1)
+        y_layout.addWidget(QLabel("Max:"), 0, 2)
+        self.y_max_spin = QSpinBox()
+        self.y_max_spin.setRange(1, y_max)
+        self.y_max_spin.setValue(y_max)
+        y_layout.addWidget(self.y_max_spin, 0, 3)
+        y_layout.addWidget(QLabel(f"(0 - {y_max})"), 0, 4)
+        layout.addWidget(y_group)
+
+        # Z coordinates
+        z_group = QGroupBox("Z Range (Depth/Slices)")
+        z_layout = QGridLayout(z_group)
+        z_layout.addWidget(QLabel("Min:"), 0, 0)
+        self.z_min_spin = QSpinBox()
+        self.z_min_spin.setRange(0, z_max - 1)
+        self.z_min_spin.setValue(0)
+        z_layout.addWidget(self.z_min_spin, 0, 1)
+        z_layout.addWidget(QLabel("Max:"), 0, 2)
+        self.z_max_spin = QSpinBox()
+        self.z_max_spin.setRange(1, z_max)
+        self.z_max_spin.setValue(z_max)
+        z_layout.addWidget(self.z_max_spin, 0, 3)
+        z_layout.addWidget(QLabel(f"(0 - {z_max})"), 0, 4)
+        layout.addWidget(z_group)
+
+        # Info label
+        info_label = QLabel(
+            "Note: Coordinates are in pixels. The ROI will be a rectangular region\n"
+            "defined by the min/max values for each axis."
+        )
+        info_label.setStyleSheet("color: #666; font-size: 10px;")
+        layout.addWidget(info_label)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        create_btn = QPushButton("Create ROI")
+        create_btn.setDefault(True)
+        create_btn.clicked.connect(self._onCreate)
+        create_btn.setStyleSheet("QPushButton { font-weight: bold; }")
+        button_layout.addWidget(create_btn)
+
+        layout.addLayout(button_layout)
+
+    def _onCreate(self):
+        """Validate and create ROI"""
+        # Validate name
+        name = self.name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Warning", "Please enter a ROI name.")
+            return
+
+        # Get coordinates
+        x_min = self.x_min_spin.value()
+        x_max = self.x_max_spin.value()
+        y_min = self.y_min_spin.value()
+        y_max = self.y_max_spin.value()
+        z_min = self.z_min_spin.value()
+        z_max = self.z_max_spin.value()
+
+        # Validate ranges
+        if x_min >= x_max:
+            QMessageBox.warning(self, "Warning", "X Min must be less than X Max.")
+            return
+        if y_min >= y_max:
+            QMessageBox.warning(self, "Warning", "Y Min must be less than Y Max.")
+            return
+        if z_min >= z_max:
+            QMessageBox.warning(self, "Warning", "Z Min must be less than Z Max.")
+            return
+
+        # Store results
+        self.roi_name = name
+        self.roi_bounds = (z_min, z_max, y_min, y_max, x_min, x_max)
+
+        self.accept()
+
+    def getROI(self):
+        """Return the created ROI name and bounds"""
+        return self.roi_name, self.roi_bounds
+
+
+class ROISelectDialog(QDialog):
+    """Dialog for selecting ROIs before analysis operations"""
+    def __init__(self, parent, rois, title="Select ROIs", button_text="OK"):
+        super().__init__(parent)
+        self.rois = rois  # Dictionary of ROIs from viewer
+        self.selected_rois = []
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(400, 350)
+        self._button_text = button_text
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        # Title - extracted from window title
+        title_label = QLabel("Select ROIs for the operation:")
+        title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(title_label)
+
+        # ROI list with checkboxes
+        roi_group = QGroupBox("Available ROIs")
+        roi_layout = QVBoxLayout(roi_group)
+
+        self.roi_checkboxes = {}
+        if self.rois:
+            for roi_name, roi_data in self.rois.items():
+                checkbox = QCheckBox(roi_name)
+                checkbox.setChecked(True)  # Default: all selected
+                # Show ROI bounds info
+                bounds = roi_data.get('bounds', [])
+                if bounds:
+                    z_min, z_max, y_min, y_max, x_min, x_max = bounds
+                    checkbox.setToolTip(
+                        f"Bounds: Z[{z_min}:{z_max}], Y[{y_min}:{y_max}], X[{x_min}:{x_max}]\n"
+                        f"Size: {z_max-z_min} x {y_max-y_min} x {x_max-x_min}"
+                    )
+                # Color indicator
+                color = roi_data.get('color', 'red')
+                checkbox.setStyleSheet(f"QCheckBox {{ color: {color}; }}")
+                self.roi_checkboxes[roi_name] = checkbox
+                roi_layout.addWidget(checkbox)
+        else:
+            no_roi_label = QLabel("No ROIs defined.\nPlease create ROIs using 'Edit ROI' first.")
+            no_roi_label.setStyleSheet("color: gray; font-style: italic;")
+            roi_layout.addWidget(no_roi_label)
+
+        roi_layout.addStretch()
+        layout.addWidget(roi_group)
+
+        # Select All / Deselect All buttons
+        if self.rois:
+            select_layout = QHBoxLayout()
+            select_all_btn = QPushButton("Select All")
+            select_all_btn.clicked.connect(self._selectAll)
+            select_layout.addWidget(select_all_btn)
+
+            deselect_all_btn = QPushButton("Deselect All")
+            deselect_all_btn.clicked.connect(self._deselectAll)
+            select_layout.addWidget(deselect_all_btn)
+
+            select_layout.addStretch()
+            layout.addLayout(select_layout)
+
+        # Info label
+        info_label = QLabel(
+            "If no ROIs are selected, the operation will be applied\n"
+            "to the entire volume (may take longer)."
+        )
+        info_label.setStyleSheet("color: #666; font-size: 10px;")
+        layout.addWidget(info_label)
+
+        # Button box
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        ok_btn = QPushButton(self._button_text)
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self._onCompute)
+        ok_btn.setStyleSheet("QPushButton { font-weight: bold; }")
+        button_layout.addWidget(ok_btn)
+
+        layout.addLayout(button_layout)
+
+    def _selectAll(self):
+        for checkbox in self.roi_checkboxes.values():
+            checkbox.setChecked(True)
+
+    def _deselectAll(self):
+        for checkbox in self.roi_checkboxes.values():
+            checkbox.setChecked(False)
+
+    def _onCompute(self):
+        self.selected_rois = [
+            name for name, checkbox in self.roi_checkboxes.items()
+            if checkbox.isChecked()
+        ]
+        self.accept()
+
+    def getSelectedROIs(self):
+        """Return list of selected ROI names"""
+        return self.selected_rois
+
+
 class HistogramDialog(QDialog):
     def __init__(self, main_window, analysis_tab):
         super().__init__()
@@ -7379,6 +7662,20 @@ class HistogramDialog(QDialog):
 
         layout.addWidget(orientation_group)
 
+        # Display Options Group
+        display_group = QGroupBox("Display Options")
+        display_layout = QVBoxLayout(display_group)
+
+        self.use_density_check = QCheckBox("Use Density (normalize to probability density)")
+        self.use_density_check.setChecked(False)
+        self.use_density_check.setToolTip(
+            "If checked, the histogram is normalized such that the integral equals 1.\n"
+            "This makes it easier to compare distributions with different sample sizes."
+        )
+        display_layout.addWidget(self.use_density_check)
+
+        layout.addWidget(display_group)
+
         # Statistical Display Options Group
         stats_group = QGroupBox("Statistical Analysis")
         stats_layout = QVBoxLayout(stats_group)
@@ -7476,6 +7773,7 @@ class HistogramDialog(QDialog):
                 'theta': self.theta_check.isChecked() and self.theta_check.isEnabled(),
                 'phi': self.phi_check.isChecked() and self.phi_check.isEnabled()
             },
+            'use_density': self.use_density_check.isChecked(),
             'statistics': {
                 'mean': self.show_mean_check.isChecked(),
                 'std': self.show_deviation_check.isChecked(),
@@ -8740,11 +9038,13 @@ class FiberDetectionSettingsDialog(QDialog):
 
 class SimulationSettingsDialog(QDialog):
     """Dialog for advanced simulation settings"""
-    def __init__(self, parent=None, settings=None):
+    def __init__(self, parent=None, settings=None, rois=None, main_window=None):
         super().__init__(parent)
         self.setWindowTitle("Simulation Settings")
         self.setModal(True)
-        self.setMinimumWidth(350)
+        self.setMinimumWidth(400)
+        self.rois = rois or {}
+        self.main_window = main_window
 
         # Default settings
         self.settings = settings or {
@@ -8754,13 +9054,44 @@ class SimulationSettingsDialog(QDialog):
             'maximum_fiber_misalignment': 20.0,
             'fiber_misalignment_step_size': 0.1,
             'kink_width': None,
-            'gauge_length': None
+            'gauge_length': None,
+            'use_3d_orientation': False,
+            'selected_roi': None
         }
 
         self.initUI()
 
     def initUI(self):
         layout = QVBoxLayout(self)
+
+        # Orientation Data Source Group
+        orientation_group = QGroupBox("Orientation Data Source")
+        orientation_layout = QFormLayout(orientation_group)
+
+        self.use_3d_orientation_check = QCheckBox("Use 3D Orientation Data")
+        self.use_3d_orientation_check.setChecked(self.settings.get('use_3d_orientation', False))
+        self.use_3d_orientation_check.stateChanged.connect(self.onUse3DOrientationChanged)
+        orientation_layout.addRow(self.use_3d_orientation_check)
+
+        # ROI Selection
+        self.roi_combo = QComboBox()
+        self.roi_combo.addItem("Global (All Data)", None)
+        # Add ROIs that have orientation data
+        for roi_name, roi_data in self.rois.items():
+            if roi_data.get('angle') is not None or roi_data.get('theta') is not None:
+                self.roi_combo.addItem(roi_name, roi_name)
+        # Set current selection
+        current_roi = self.settings.get('selected_roi')
+        if current_roi:
+            idx = self.roi_combo.findData(current_roi)
+            if idx >= 0:
+                self.roi_combo.setCurrentIndex(idx)
+        orientation_layout.addRow("ROI:", self.roi_combo)
+
+        # Initially set ROI combo enabled state
+        self.roi_combo.setEnabled(self.use_3d_orientation_check.isChecked())
+
+        layout.addWidget(orientation_group)
 
         # Shear Stress Group
         shear_group = QGroupBox("Shear Stress Parameters")
@@ -8873,6 +9204,11 @@ class SimulationSettingsDialog(QDialog):
         self.kink_width_spin.setEnabled(enabled)
         self.gauge_length_spin.setEnabled(enabled)
 
+    def onUse3DOrientationChanged(self, state):
+        """Toggle ROI selection based on 3D orientation checkbox"""
+        enabled = (state == Qt.Checked.value) if hasattr(Qt.Checked, 'value') else (state == 2)
+        self.roi_combo.setEnabled(enabled)
+
     def resetToDefaults(self):
         """Reset all values to defaults"""
         self.max_shear_spin.setValue(100.0)
@@ -8894,7 +9230,9 @@ class SimulationSettingsDialog(QDialog):
             'maximum_fiber_misalignment': self.max_misalign_spin.value(),
             'fiber_misalignment_step_size': self.misalign_step_spin.value(),
             'kink_width': self.kink_width_spin.value() if use_correction else None,
-            'gauge_length': self.gauge_length_spin.value() if use_correction else None
+            'gauge_length': self.gauge_length_spin.value() if use_correction else None,
+            'use_3d_orientation': self.use_3d_orientation_check.isChecked(),
+            'selected_roi': self.roi_combo.currentData()
         }
 
 
@@ -8912,74 +9250,19 @@ class SimulationTab(QWidget):
             'maximum_fiber_misalignment': 20.0,
             'fiber_misalignment_step_size': 0.1,
             'kink_width': None,
-            'gauge_length': None
+            'gauge_length': None,
+            'use_3d_orientation': False,
+            'selected_roi': None
         }
         # Store simulation results for export
         self.simulation_results = []
         self.initUI()
 
     def initUI(self):
+        # Ribbon is now managed by MainWindow's ribbon_stack
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Ribbon toolbar with gray frame (matching other tabs)
-        toolbar = QFrame()
-        toolbar.setStyleSheet("QFrame { background-color: #f0f0f0; border-bottom: 1px solid #d0d0d0; }")
-        toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setSpacing(10)
-
-        # Settings Group (first)
-        settings_group = QGroupBox("Settings")
-        settings_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        settings_layout = QVBoxLayout(settings_group)
-
-        self.settings_btn = RibbonButton("Settings")
-        self.settings_btn.clicked.connect(self.openSettingsDialog)
-        settings_layout.addWidget(self.settings_btn)
-
-        toolbar_layout.addWidget(settings_group)
-
-        # Simulation Group
-        sim_group = QGroupBox("Simulation")
-        sim_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        sim_layout = QHBoxLayout(sim_group)
-
-        self.run_btn = RibbonButton("Run\nSimulation")
-        self.run_btn.clicked.connect(self.runSimulation)
-        sim_layout.addWidget(self.run_btn)
-
-        self.clear_btn = RibbonButton("Clear\nGraph")
-        self.clear_btn.clicked.connect(self.clearGraph)
-        sim_layout.addWidget(self.clear_btn)
-
-        toolbar_layout.addWidget(sim_group)
-
-        # Analysis Group (Histogram)
-        analysis_group = QGroupBox("Analysis")
-        analysis_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        analysis_layout = QVBoxLayout(analysis_group)
-
-        self.histogram_btn = RibbonButton("Histogram")
-        self.histogram_btn.clicked.connect(self.openHistogramDialog)
-        self.histogram_btn.setEnabled(False)  # Enable after orientation data is available
-        analysis_layout.addWidget(self.histogram_btn)
-
-        toolbar_layout.addWidget(analysis_group)
-
-        # Export Group
-        export_group = QGroupBox("Export")
-        export_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
-        export_layout = QVBoxLayout(export_group)
-
-        self.export_btn = RibbonButton("Export\nXLSX")
-        self.export_btn.clicked.connect(self.openExportDialog)
-        export_layout.addWidget(self.export_btn)
-
-        toolbar_layout.addWidget(export_group)
-        toolbar_layout.addStretch()
-
-        layout.addWidget(toolbar)
-        layout.addStretch()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
     def setViewer(self, viewer):
         """Set the viewer reference (for future use)"""
@@ -9012,9 +9295,14 @@ class SimulationTab(QWidget):
 
     def openSettingsDialog(self):
         """Open simulation settings dialog"""
-        dialog = SimulationSettingsDialog(self, self.simulation_settings)
+        rois = self.main_window.viewer.rois if self.main_window and self.main_window.viewer else {}
+        dialog = SimulationSettingsDialog(self, self.simulation_settings, rois, self.main_window)
         if dialog.exec() == QDialog.Accepted:
             self.simulation_settings = dialog.getSettings()
+            # Update UI state based on settings
+            if self.main_window and hasattr(self.main_window, 'simulation_content'):
+                use_3d = self.simulation_settings.get('use_3d_orientation', False)
+                self.main_window.simulation_content.updateOrientationInputState(use_3d)
 
     def clearGraph(self):
         """Clear the stress-strain graph and simulation results"""
@@ -9051,22 +9339,33 @@ class SimulationTab(QWidget):
         # Get simulation settings
         settings = self.simulation_settings
 
-        # Check if using 3D orientation data
-        use_3d_orientation = sim_content.use_3d_orientation_check.isChecked()
+        # Check if using 3D orientation data (from settings dialog)
+        use_3d_orientation = settings.get('use_3d_orientation', False)
+        selected_roi = settings.get('selected_roi', None)
 
         self.main_window.status_label.setText("Running simulation...")
         QApplication.processEvents()
 
         try:
             if use_3d_orientation:
-                # Use 3D orientation data from analysis
-                orientation_data = self.main_window.orientation_data
-                if orientation_data['reference'] is None:
-                    raise ValueError("No 3D orientation data available. Please run orientation analysis first.")
+                # Get orientation data from selected ROI or global data
+                if selected_roi is not None and isinstance(selected_roi, str) and selected_roi in self.main_window.viewer.rois:
+                    roi_data = self.main_window.viewer.rois[selected_roi]
+                    orientation_profile = roi_data.get('angle')
+                    if orientation_profile is None:
+                        orientation_profile = roi_data.get('reference')
+                    if orientation_profile is None:
+                        raise ValueError(f"No orientation data in ROI '{selected_roi}'. Please run orientation analysis first.")
+                else:
+                    # Use global orientation data
+                    orientation_data = self.main_window.orientation_data
+                    orientation_profile = orientation_data.get('reference')
+                    if orientation_profile is None:
+                        raise ValueError("No 3D orientation data available. Please run orientation analysis first.")
 
                 # Run simulation with measured orientation profile
                 strength, strain, stress_curve, strain_array = estimate_compression_strength_from_profile(
-                    orientation_profile=orientation_data['reference'],
+                    orientation_profile=orientation_profile,
                     material_params=material,
                     maximum_shear_stress=settings['maximum_shear_stress'],
                     shear_stress_step_size=settings['shear_stress_step_size'],
@@ -9153,8 +9452,19 @@ class SimulationContentPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.material_presets = {}
+        self.main_window = None
         self.loadMaterialPresets()
         self.initUI()
+
+    def setMainWindow(self, main_window):
+        """Set reference to main window"""
+        self.main_window = main_window
+
+    def updateOrientationInputState(self, use_3d_orientation):
+        """Enable/disable manual orientation inputs based on 3D orientation setting"""
+        # Disable manual inputs when using 3D orientation data
+        self.initial_misalignment_spin.setEnabled(not use_3d_orientation)
+        self.std_deviation_spin.setEnabled(not use_3d_orientation)
 
     def loadMaterialPresets(self):
         """Load material presets from JSON file"""
@@ -9291,18 +9601,12 @@ class SimulationContentPanel(QWidget):
 
         left_layout.addWidget(plasticity_group)
 
-        # Fiber Orientation Group
-        orientation_group = QGroupBox("Fiber Orientation")
+        # Fiber Orientation Group (for Gaussian distribution mode)
+        orientation_group = QGroupBox("Fiber Orientation (Gaussian)")
         orientation_group.setStyleSheet(group_style)
         orientation_layout = QFormLayout(orientation_group)
         orientation_layout.setSpacing(8)
         orientation_layout.setContentsMargins(10, 20, 10, 10)
-
-        # Use 3D Orientation toggle
-        self.use_3d_orientation_check = QCheckBox("Use 3D Orientation Data")
-        self.use_3d_orientation_check.setChecked(False)
-        self.use_3d_orientation_check.stateChanged.connect(self.onUse3DOrientationChanged)
-        orientation_layout.addRow(self.use_3d_orientation_check)
 
         # Initial Misalignment
         self.initial_misalignment_spin = QDoubleSpinBox()
@@ -9351,12 +9655,15 @@ class SimulationContentPanel(QWidget):
 
         # Right panel - Stress-Strain Graph Display
         right_panel = QWidget()
+        right_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         # Matplotlib figure for stress-strain curve
-        self.figure = Figure(figsize=(6, 5), facecolor='white')
+        self.figure = Figure(figsize=(4, 3), facecolor='white')
         self.canvas = FigureCanvas(self.figure)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.canvas.setMinimumSize(200, 150)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_xlabel('Strain')
         self.ax.set_ylabel('Stress (MPa)')
@@ -9430,14 +9737,6 @@ class SimulationContentPanel(QWidget):
             self.k_spin.blockSignals(False)
             self.n_spin.blockSignals(False)
 
-    def onUse3DOrientationChanged(self, state):
-        """Toggle between manual input and 3D orientation data"""
-        use_3d = (state == Qt.Checked.value) if hasattr(Qt.Checked, 'value') else (state == 2)
-        # Disable/enable manual input fields
-        self.initial_misalignment_spin.setEnabled(not use_3d)
-        self.std_deviation_spin.setEnabled(not use_3d)
-
-
 class VMMMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -9452,6 +9751,10 @@ class VMMMainWindow(QMainWindow):
     def initUI(self):
         self.setWindowTitle("VMM-FRC - Virtual Microstructure Modeling for Fiber Reinforced Polymer Composites")
 
+        # Set fixed initial size to prevent canvas from expanding window
+        self.setMinimumSize(800, 600)
+        self.resize(1200, 800)
+
         # Set application icon
         import os
         icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'vmm_logo.png')
@@ -9463,13 +9766,6 @@ class VMMMainWindow(QMainWindow):
             QMainWindow {
                 background-color: #f5f5f5;
             }
-            QTabWidget::pane {
-                border: 1px solid #d0d0d0;
-                background-color: white;
-            }
-            QTabWidget::tab-bar {
-                alignment: left;
-            }
             QTabBar::tab {
                 background-color: #e0e0e0;
                 padding: 8px 20px;
@@ -9478,49 +9774,75 @@ class VMMMainWindow(QMainWindow):
                 border-top-right-radius: 4px;
             }
             QTabBar::tab:selected {
-                background-color: white;
-                border-bottom: 1px solid white;
+                background-color: #f0f0f0;
             }
             QTabBar::tab:hover {
                 background-color: #f0f0f0;
             }
         """)
 
-        # Central widget with full-width tabs at top
+        # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Full-width tab widget at the top
-        self.tabs = QTabWidget()
-        self.tabs.setMaximumHeight(200)
-
-        # Create tabs
+        # Create tab objects first (before ribbons, as ribbons reference them)
         self.volume_tab = VolumeTab()
-        self.tabs.addTab(self.volume_tab, "Volume")
-
-        # Analysis tab
+        self.volume_tab.main_window = self
         self.analysis_tab = AnalysisTab()
-        self.tabs.addTab(self.analysis_tab, "Analysis")
-
-        # Modelling tab (fiber trajectory)
+        self.analysis_tab.main_window = self
         self.modelling_tab = VisualizationTab()
         self.modelling_tab.setMainWindow(self)
-        self.tabs.addTab(self.modelling_tab, "Modelling")
-
-        # Simulation tab - last tab
         self.simulation_tab = SimulationTab()
         self.simulation_tab.setMainWindow(self)
-        self.tabs.addTab(self.simulation_tab, "Simulation")
 
-        main_layout.addWidget(self.tabs)
+        # Keep tabs reference for compatibility (dummy QTabWidget for setCurrentWidget)
+        self.tabs = type('Tabs', (), {
+            'setCurrentWidget': lambda self, w: None,
+            'currentChanged': type('Signal', (), {'connect': lambda self, f: None})()
+        })()
+
+        # Tab bar only (not QTabWidget)
+        self.tab_bar = QTabBar()
+        self.tab_bar.addTab("Volume")
+        self.tab_bar.addTab("Analysis")
+        self.tab_bar.addTab("Modelling")
+        self.tab_bar.addTab("Simulation")
+        self.tab_bar.currentChanged.connect(self.onTabChanged)
+        main_layout.addWidget(self.tab_bar)
+
+        # Stacked widget for ribbon toolbars
+        self.ribbon_stack = QStackedWidget()
+        self.ribbon_stack.setFixedHeight(100)
+        self.ribbon_stack.setStyleSheet("QStackedWidget { background-color: #f0f0f0; border-bottom: 1px solid #d0d0d0; }")
+
+        # Create ribbon for each tab (Volume, Analysis, Modelling, Simulation)
+        self.volume_ribbon = self._createVolumeRibbon()
+        self.ribbon_stack.addWidget(self.volume_ribbon)
+
+        self.analysis_ribbon = self._createAnalysisRibbon()
+        self.ribbon_stack.addWidget(self.analysis_ribbon)
+
+        self.modelling_ribbon = self._createModellingRibbon()
+        self.ribbon_stack.addWidget(self.modelling_ribbon)
+
+        self.simulation_ribbon = self._createSimulationRibbon()
+        self.ribbon_stack.addWidget(self.simulation_ribbon)
+
+        main_layout.addWidget(self.ribbon_stack)
 
         # Simulation content panel (shown when Simulation tab is selected)
         self.simulation_content = SimulationContentPanel()
+        self.simulation_content.setMainWindow(self)
         self.simulation_content.setVisible(False)
         main_layout.addWidget(self.simulation_content)
+
+        # Modelling content (VisualizationTab contains its own content)
+        self.modelling_content = self.modelling_tab
+        self.modelling_content.setVisible(False)
+        main_layout.addWidget(self.modelling_content)
 
         # Create horizontal splitter for viewer and left slider panel
         self.content_splitter = QSplitter(Qt.Horizontal)
@@ -9713,6 +10035,532 @@ class VMMMainWindow(QMainWindow):
         self.status_label = QLabel("Ready")
         self.statusBar().addWidget(self.status_label)
 
+    def _createVolumeRibbon(self):
+        """Create Volume tab ribbon toolbar"""
+        ribbon = QFrame()
+        ribbon.setStyleSheet("QFrame { background-color: #f0f0f0; }")
+        layout = QHBoxLayout(ribbon)
+        layout.setSpacing(8)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # File Operations Group
+        file_group = QGroupBox("File")
+        file_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        file_layout = QHBoxLayout(file_group)
+
+        self.open_btn = RibbonButton("Open\nFiles")
+        self.open_btn.clicked.connect(self.openImportDialog)
+        file_layout.addWidget(self.open_btn)
+
+        layout.addWidget(file_group)
+
+        # Appearance Group
+        appearance_group = QGroupBox("Appearance")
+        appearance_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        appearance_layout = QVBoxLayout(appearance_group)
+
+        appearance_layout.addWidget(QLabel("Colormap:"))
+        self.colormap_combo = RibbonComboBox()
+        self.colormap_combo.addItems(["gray", "viridis", "jet", "coolwarm", "rainbow", "bone"])
+        self.colormap_combo.currentTextChanged.connect(self.updateColormap)
+        appearance_layout.addWidget(self.colormap_combo)
+
+        layout.addWidget(appearance_group)
+
+        # Camera Group
+        camera_group = QGroupBox("Camera")
+        camera_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        camera_layout = QHBoxLayout(camera_group)
+
+        self.reset_view_btn = RibbonButton("Reset\nView")
+        self.reset_view_btn.clicked.connect(self.resetView)
+        camera_layout.addWidget(self.reset_view_btn)
+
+        layout.addWidget(camera_group)
+
+        # Export Group
+        export_group = QGroupBox("Export")
+        export_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        export_layout = QHBoxLayout(export_group)
+
+        self.screenshot_btn = RibbonButton("Screen\nshot")
+        self.screenshot_btn.clicked.connect(self.takeScreenshot)
+        export_layout.addWidget(self.screenshot_btn)
+
+        self.export_vtk_btn = RibbonButton("Export\nVTK")
+        self.export_vtk_btn.setToolTip("Export CT volume to VTK format for Paraview")
+        self.export_vtk_btn.clicked.connect(self.export3D)
+        export_layout.addWidget(self.export_vtk_btn)
+
+        layout.addWidget(export_group)
+        layout.addStretch()
+
+        return ribbon
+
+    def _createAnalysisRibbon(self):
+        """Create Analysis tab ribbon toolbar"""
+        ribbon = QFrame()
+        ribbon.setStyleSheet("QFrame { background-color: #f0f0f0; }")
+        layout = QHBoxLayout(ribbon)
+        layout.setSpacing(8)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Analysis Operations Group
+        analysis_group = QGroupBox("Analysis")
+        analysis_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        analysis_layout = QHBoxLayout(analysis_group)
+
+        self.edit_roi_btn = RibbonButton("Edit\nROI")
+        self.edit_roi_btn.clicked.connect(self.toggleROIEdit)
+        self.edit_roi_btn.setCheckable(True)
+        analysis_layout.addWidget(self.edit_roi_btn)
+
+        self.coord_roi_btn = RibbonButton("Coord\nROI")
+        self.coord_roi_btn.setToolTip("Create ROI by entering coordinates")
+        self.coord_roi_btn.clicked.connect(self.openCoordinateROIDialog)
+        analysis_layout.addWidget(self.coord_roi_btn)
+
+        # ROI Mode selector
+        roi_mode_widget = QWidget()
+        roi_mode_layout = QVBoxLayout(roi_mode_widget)
+        roi_mode_layout.setContentsMargins(0, 0, 0, 0)
+        roi_mode_layout.setSpacing(2)
+        roi_mode_label = QLabel("ROI Mode")
+        roi_mode_label.setAlignment(Qt.AlignCenter)
+        roi_mode_label.setStyleSheet("font-size: 9px; color: #666;")
+        self.roi_mode_combo = QComboBox()
+        self.roi_mode_combo.addItems(["Rectangle", "Polygon"])
+        self.roi_mode_combo.setStyleSheet("""
+            QComboBox { padding: 2px; border: 1px solid #d0d0d0; border-radius: 3px;
+                background-color: white; font-size: 10px; min-width: 70px; }
+            QComboBox:hover { border: 1px solid #005499; background-color: #e5f3ff; }
+        """)
+        self.roi_mode_combo.currentTextChanged.connect(self.onROIModeChanged)
+        roi_mode_layout.addWidget(roi_mode_label)
+        roi_mode_layout.addWidget(self.roi_mode_combo)
+        analysis_layout.addWidget(roi_mode_widget)
+
+        self.compute_btn = RibbonButton("Compute\nOrientation")
+        self.compute_btn.clicked.connect(self.computeOrientation)
+        analysis_layout.addWidget(self.compute_btn)
+
+        self.edit_range_btn = RibbonButton("Edit\nRange")
+        self.edit_range_btn.clicked.connect(self.openRangeEditor)
+        self.edit_range_btn.setEnabled(False)
+        analysis_layout.addWidget(self.edit_range_btn)
+
+        self.histogram_btn = RibbonButton("Histogram")
+        self.histogram_btn.clicked.connect(self.openHistogramDialog)
+        self.histogram_btn.setEnabled(False)
+        analysis_layout.addWidget(self.histogram_btn)
+
+        self.void_analysis_btn = RibbonButton("Void\nAnalysis")
+        self.void_analysis_btn.clicked.connect(self.computeVoidAnalysis)
+        analysis_layout.addWidget(self.void_analysis_btn)
+
+        self.magnify_btn = RibbonButton("Magnify")
+        self.magnify_btn.setCheckable(True)
+        self.magnify_btn.clicked.connect(self.toggleMagnify)
+        analysis_layout.addWidget(self.magnify_btn)
+
+        self.reset_roi_btn = RibbonButton("Reset\nROI")
+        self.reset_roi_btn.setToolTip("Clear all ROIs")
+        self.reset_roi_btn.clicked.connect(self.resetAllROIs)
+        analysis_layout.addWidget(self.reset_roi_btn)
+
+        layout.addWidget(analysis_group)
+
+        # Reference Vector Group
+        ref_group = QGroupBox("Reference Vector")
+        ref_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        ref_layout = QVBoxLayout(ref_group)
+
+        self.ref_combo = QComboBox()
+        self.ref_combo.addItems(["Z-axis", "Y-axis", "X-axis"])
+        self.ref_combo.setStyleSheet("""
+            QComboBox { padding: 4px; border: 1px solid #d0d0d0; border-radius: 3px;
+                background-color: white; font-size: 11px; min-width: 60px; }
+            QComboBox:hover { border: 1px solid #005499; background-color: #e5f3ff; }
+        """)
+        ref_layout.addWidget(self.ref_combo)
+
+        layout.addWidget(ref_group)
+
+        # Fiber Detection Group
+        fiber_group = QGroupBox("Fiber Detection")
+        fiber_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        fiber_layout = QHBoxLayout(fiber_group)
+
+        self.fiber_detect_settings_btn = RibbonButton("Detection\nSettings")
+        self.fiber_detect_settings_btn.clicked.connect(self.openFiberDetectionSettings)
+        fiber_layout.addWidget(self.fiber_detect_settings_btn)
+
+        self.fiber_detect_btn = RibbonButton("Detect\nFibers")
+        self.fiber_detect_btn.clicked.connect(self.detectFibers)
+        fiber_layout.addWidget(self.fiber_detect_btn)
+
+        layout.addWidget(fiber_group)
+
+        # InSegt Group
+        insegt_group = QGroupBox("InSegt")
+        insegt_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        insegt_layout = QHBoxLayout(insegt_group)
+
+        self.insegt_settings_btn = RibbonButton("InSegt\nSettings")
+        self.insegt_settings_btn.clicked.connect(self.openInSegtSettings)
+        insegt_layout.addWidget(self.insegt_settings_btn)
+
+        self.insegt_labeling_btn = RibbonButton("Labeling")
+        self.insegt_labeling_btn.clicked.connect(self.openInSegtLabeling)
+        insegt_layout.addWidget(self.insegt_labeling_btn)
+
+        self.insegt_run_btn = RibbonButton("Run")
+        self.insegt_run_btn.clicked.connect(self.runInSegt)
+        self.insegt_run_btn.setEnabled(False)
+        insegt_layout.addWidget(self.insegt_run_btn)
+
+        layout.addWidget(insegt_group)
+
+        # Volume Fraction Group
+        vf_group = QGroupBox("Volume Fraction")
+        vf_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        vf_layout_inner = QHBoxLayout(vf_group)
+
+        self.vf_settings_btn = RibbonButton("Vf\nSettings")
+        self.vf_settings_btn.clicked.connect(self.openVfSettings)
+        vf_layout_inner.addWidget(self.vf_settings_btn)
+
+        self.vf_compute_btn = RibbonButton("Compute\nVf")
+        self.vf_compute_btn.clicked.connect(self.computeVf)
+        vf_layout_inner.addWidget(self.vf_compute_btn)
+
+        layout.addWidget(vf_group)
+
+        # Export Group
+        export_group = QGroupBox("Export")
+        export_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        export_layout = QHBoxLayout(export_group)
+
+        self.export_orientation_btn = RibbonButton("Export\nOrientation")
+        self.export_orientation_btn.clicked.connect(self.exportOrientationToVTK)
+        self.export_orientation_btn.setEnabled(False)
+        export_layout.addWidget(self.export_orientation_btn)
+
+        self.export_vf_btn = RibbonButton("Export\nVf Map")
+        self.export_vf_btn.clicked.connect(self.exportVfMapToVTK)
+        self.export_vf_btn.setEnabled(False)
+        export_layout.addWidget(self.export_vf_btn)
+
+        layout.addWidget(export_group)
+        layout.addStretch()
+
+        return ribbon
+
+    def _createModellingRibbon(self):
+        """Create Modelling tab ribbon toolbar"""
+        ribbon = QFrame()
+        ribbon.setStyleSheet("QFrame { background-color: #f0f0f0; }")
+        layout = QHBoxLayout(ribbon)
+        layout.setSpacing(8)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Settings Group
+        settings_group = QGroupBox("Settings")
+        settings_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        settings_layout = QVBoxLayout(settings_group)
+
+        self.modelling_settings_btn = RibbonButton("Settings")
+        self.modelling_settings_btn.clicked.connect(self.modelling_tab.openSettingsDialog)
+        settings_layout.addWidget(self.modelling_settings_btn)
+
+        layout.addWidget(settings_group)
+
+        # Fiber Trajectory Group
+        fiber_group = QGroupBox("Fiber Trajectory")
+        fiber_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        fiber_layout = QHBoxLayout(fiber_group)
+
+        self.generate_btn = RibbonButton("Generate\nTrajectory")
+        self.generate_btn.setEnabled(False)
+        self.generate_btn.clicked.connect(self.modelling_tab.generateTrajectory)
+        fiber_layout.addWidget(self.generate_btn)
+
+        layout.addWidget(fiber_group)
+
+        # Export Group
+        export_group = QGroupBox("Export")
+        export_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        export_layout = QHBoxLayout(export_group)
+
+        self.export_screenshot_btn = RibbonButton("Export\nScreenshot")
+        self.export_screenshot_btn.setEnabled(False)
+        self.export_screenshot_btn.clicked.connect(self.modelling_tab.showExportScreenshotDialog)
+        export_layout.addWidget(self.export_screenshot_btn)
+
+        self.export_traj_vtk_btn = RibbonButton("Export\nVTK")
+        self.export_traj_vtk_btn.setEnabled(False)
+        self.export_traj_vtk_btn.clicked.connect(self.modelling_tab.exportTrajectoryToVTK)
+        export_layout.addWidget(self.export_traj_vtk_btn)
+
+        layout.addWidget(export_group)
+
+        # Analysis Group
+        analysis_group = QGroupBox("Analysis")
+        analysis_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        analysis_layout = QHBoxLayout(analysis_group)
+
+        self.trajectory_histogram_btn = RibbonButton("Histogram")
+        self.trajectory_histogram_btn.setEnabled(False)
+        self.trajectory_histogram_btn.clicked.connect(self.modelling_tab.openTrajectoryHistogramDialog)
+        analysis_layout.addWidget(self.trajectory_histogram_btn)
+
+        layout.addWidget(analysis_group)
+        layout.addStretch()
+
+        return ribbon
+
+    def _createSimulationRibbon(self):
+        """Create Simulation tab ribbon toolbar"""
+        ribbon = QFrame()
+        ribbon.setStyleSheet("QFrame { background-color: #f0f0f0; }")
+        layout = QHBoxLayout(ribbon)
+        layout.setSpacing(8)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Settings Group
+        settings_group = QGroupBox("Settings")
+        settings_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        settings_layout = QVBoxLayout(settings_group)
+
+        self.sim_settings_btn = RibbonButton("Settings")
+        self.sim_settings_btn.clicked.connect(self.simulation_tab.openSettingsDialog)
+        settings_layout.addWidget(self.sim_settings_btn)
+
+        layout.addWidget(settings_group)
+
+        # Simulation Group
+        sim_group = QGroupBox("Simulation")
+        sim_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        sim_layout = QHBoxLayout(sim_group)
+
+        self.run_sim_btn = RibbonButton("Run\nSimulation")
+        self.run_sim_btn.clicked.connect(self.simulation_tab.runSimulation)
+        sim_layout.addWidget(self.run_sim_btn)
+
+        self.clear_graph_btn = RibbonButton("Clear\nGraph")
+        self.clear_graph_btn.clicked.connect(self.simulation_tab.clearGraph)
+        sim_layout.addWidget(self.clear_graph_btn)
+
+        layout.addWidget(sim_group)
+
+        # Analysis Group
+        analysis_group = QGroupBox("Analysis")
+        analysis_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        analysis_layout = QVBoxLayout(analysis_group)
+
+        self.sim_histogram_btn = RibbonButton("Histogram")
+        self.sim_histogram_btn.clicked.connect(self.simulation_tab.openHistogramDialog)
+        self.sim_histogram_btn.setEnabled(False)
+        analysis_layout.addWidget(self.sim_histogram_btn)
+
+        layout.addWidget(analysis_group)
+
+        # Export Group
+        export_group = QGroupBox("Export")
+        export_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        export_layout = QVBoxLayout(export_group)
+
+        self.sim_export_btn = RibbonButton("Export\nXLSX")
+        self.sim_export_btn.clicked.connect(self.simulation_tab.openExportDialog)
+        export_layout.addWidget(self.sim_export_btn)
+
+        layout.addWidget(export_group)
+        layout.addStretch()
+
+        return ribbon
+
+    # Delegate methods for ribbon buttons
+    def openImportDialog(self):
+        """Open the import dialog window"""
+        if not hasattr(self, 'import_dialog') or not self.import_dialog:
+            self.import_dialog = ImportDialog(self)
+            self.import_dialog.volume_imported.connect(self.onVolumeImported)
+        self.import_dialog.show()
+        self.import_dialog.raise_()
+        self.import_dialog.activateWindow()
+
+    def onVolumeImported(self, volume):
+        """Handle imported volume from dialog"""
+        self.setVolume(volume)
+
+    def updateColormap(self):
+        if self.viewer:
+            colormap = self.colormap_combo.currentText()
+            self.viewer.setColormap(colormap)
+
+    def resetView(self):
+        if self.viewer:
+            self.viewer.resetCamera()
+
+    def takeScreenshot(self):
+        if self.viewer:
+            filename, _ = QFileDialog.getSaveFileName(
+                self, "Save Screenshot", "", "PNG Files (*.png);;All Files (*)"
+            )
+            if filename:
+                self.viewer.screenshot(filename)
+                QMessageBox.information(self, "Success", f"Screenshot saved to {filename}")
+
+    def export3D(self):
+        """Export CT volume to VTK - delegate to VolumeTab"""
+        if hasattr(self, 'volume_tab') and hasattr(self.volume_tab, 'export3D'):
+            if self.viewer:
+                self.volume_tab.viewer = self.viewer
+            self.volume_tab.export3D()
+
+    def toggleROIEdit(self, checked):
+        """Toggle ROI editing mode - delegate to AnalysisTab"""
+        if self.viewer:
+            self.viewer.toggleROI(checked)
+        # Update button text
+        if checked:
+            self.edit_roi_btn.setText("Apply\nROI")
+            self.compute_btn.setEnabled(False)
+        else:
+            self.edit_roi_btn.setText("Edit\nROI")
+            self.compute_btn.setEnabled(True)
+
+    def onROIModeChanged(self, mode):
+        if self.viewer:
+            self.viewer.setROIMode(mode.lower())
+
+    def computeOrientation(self):
+        """Compute orientation - delegate to AnalysisTab"""
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'computeOrientation'):
+            # Set viewer reference if needed
+            if self.viewer and self.analysis_tab.viewer != self.viewer:
+                self.analysis_tab.viewer = self.viewer
+            self.analysis_tab.computeOrientation()
+
+    def openRangeEditor(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openRangeEditor'):
+            self.analysis_tab.openRangeEditor()
+
+    def openHistogramDialog(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openHistogramDialog'):
+            self.analysis_tab.openHistogramDialog()
+
+    def computeVoidAnalysis(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'computeVoidAnalysis'):
+            if self.viewer and self.analysis_tab.viewer != self.viewer:
+                self.analysis_tab.viewer = self.viewer
+            self.analysis_tab.computeVoidAnalysis()
+
+    def toggleMagnify(self, checked):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'toggleMagnify'):
+            if self.viewer and self.analysis_tab.viewer != self.viewer:
+                self.analysis_tab.viewer = self.viewer
+            self.analysis_tab.toggleMagnify(checked)
+
+    def resetAllROIs(self):
+        if self.viewer:
+            self.viewer.resetAllROIs()
+
+    def openCoordinateROIDialog(self):
+        """Open dialog to create ROI by entering coordinates"""
+        if self.current_volume is None:
+            QMessageBox.warning(self, "Warning", "Please load a volume first.")
+            return
+
+        # Get volume shape
+        volume_shape = self.current_volume.shape
+
+        # Show coordinate input dialog
+        dialog = CoordinateROIDialog(self, volume_shape)
+        if dialog.exec() == QDialog.Accepted:
+            roi_name, roi_bounds = dialog.getROI()
+            if roi_name and roi_bounds:
+                # Check if ROI name already exists
+                if self.viewer and roi_name in self.viewer.rois:
+                    reply = QMessageBox.question(
+                        self, "ROI Exists",
+                        f"ROI '{roi_name}' already exists. Overwrite?",
+                        QMessageBox.Yes | QMessageBox.No
+                    )
+                    if reply != QMessageBox.Yes:
+                        return
+
+                # Create ROI in viewer
+                if self.viewer:
+                    # Generate a color for this ROI
+                    roi_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+                                  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+                    color_idx = len(self.viewer.rois) % len(roi_colors)
+                    color = roi_colors[color_idx]
+
+                    # Add ROI to viewer
+                    self.viewer.rois[roi_name] = {
+                        'bounds': roi_bounds,
+                        'color': color,
+                        'polygon_xy': None,  # No polygon for coordinate-based ROI
+                        'theta': None,
+                        'phi': None,
+                        'angle': None
+                    }
+
+                    # Update display
+                    self.viewer.renderVolume()
+
+                    # Show confirmation
+                    z_min, z_max, y_min, y_max, x_min, x_max = roi_bounds
+                    QMessageBox.information(
+                        self, "ROI Created",
+                        f"ROI '{roi_name}' created:\n"
+                        f"  X: {x_min} - {x_max}\n"
+                        f"  Y: {y_min} - {y_max}\n"
+                        f"  Z: {z_min} - {z_max}"
+                    )
+
+    def openFiberDetectionSettings(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openFiberDetectionSettings'):
+            self.analysis_tab.openFiberDetectionSettings()
+
+    def detectFibers(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'detectFibers'):
+            if self.viewer and self.analysis_tab.viewer != self.viewer:
+                self.analysis_tab.viewer = self.viewer
+            self.analysis_tab.detectFibers()
+
+    def openInSegtSettings(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openInSegtSettings'):
+            self.analysis_tab.openInSegtSettings()
+
+    def openInSegtLabeling(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openInSegtLabeling'):
+            self.analysis_tab.openInSegtLabeling()
+
+    def runInSegt(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'runInSegt'):
+            self.analysis_tab.runInSegt()
+
+    def openVfSettings(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openVfSettings'):
+            self.analysis_tab.openVfSettings()
+
+    def computeVf(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'computeVf'):
+            if self.viewer and self.analysis_tab.viewer != self.viewer:
+                self.analysis_tab.viewer = self.viewer
+            self.analysis_tab.computeVf()
+
+    def exportOrientationToVTK(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'exportOrientationToVTK'):
+            self.analysis_tab.exportOrientationToVTK()
+
+    def exportVfMapToVTK(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'exportVfMapToVTK'):
+            self.analysis_tab.exportVfMapToVTK()
+
     def updateNoiseScale(self):
         """Update noise scale value for analysis"""
         value = self.noise_scale_slider.value()
@@ -9781,27 +10629,32 @@ class VMMMainWindow(QMainWindow):
 
     def onTabChanged(self, index):
         """Handle tab change to show/hide appropriate controls"""
+        # Switch ribbon stack
+        self.ribbon_stack.setCurrentIndex(index)
+
         # Tab indices: 0=Volume, 1=Analysis, 2=Modelling, 3=Simulation
         if index == 2:  # Modelling tab (fiber trajectory)
             # Hide slicer view, Modelling tab has its own viewport
             self.content_splitter.setVisible(False)
             self.simulation_content.setVisible(False)
             self.noise_group.setVisible(False)
-            # Remove height limit for Modelling tab (full window)
-            self.tabs.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+            self.ribbon_stack.setVisible(True)
+            self.modelling_content.setVisible(True)
         elif index == 3:  # Simulation tab
             # Hide slicer view, show simulation content
             self.content_splitter.setVisible(False)
             self.simulation_content.setVisible(True)
             self.noise_group.setVisible(False)
-            self.tabs.setMaximumHeight(200)
+            self.ribbon_stack.setVisible(True)
+            self.modelling_content.setVisible(False)
         else:
             # Show slicer view, hide simulation content
             self.content_splitter.setVisible(True)
             self.simulation_content.setVisible(False)
+            self.modelling_content.setVisible(False)
+            self.ribbon_stack.setVisible(True)
             # Show noise group only for Analysis tab
             self.noise_group.setVisible(index == 1)
-            self.tabs.setMaximumHeight(200)
 
 
     def updateSlices(self):
@@ -9830,9 +10683,12 @@ class VMMMainWindow(QMainWindow):
     def updateSlicesFromSpin(self):
         """Update sliders when spin boxes change"""
         # Temporarily disconnect slider signals to avoid loops
-        self.x_slice_slider.valueChanged.disconnect()
-        self.y_slice_slider.valueChanged.disconnect()
-        self.z_slice_slider.valueChanged.disconnect()
+        try:
+            self.x_slice_slider.valueChanged.disconnect(self.updateSlices)
+            self.y_slice_slider.valueChanged.disconnect(self.updateSlices)
+            self.z_slice_slider.valueChanged.disconnect(self.updateSlices)
+        except (TypeError, RuntimeError):
+            pass  # Signals not connected yet
 
         # Update sliders from spin boxes
         self.x_slice_slider.setValue(self.x_slice_spin.value())
@@ -9846,27 +10702,6 @@ class VMMMainWindow(QMainWindow):
 
         # Update viewer
         self.updateSlices()
-
-    def updateControlsForRenderMode(self, method):
-        """Enable/disable controls based on render mode"""
-        # Reset all controls
-        self.x_slice_slider.setEnabled(False)
-        self.y_slice_slider.setEnabled(False)
-        self.z_slice_slider.setEnabled(False)
-        self.x_slice_spin.setEnabled(False)
-        self.y_slice_spin.setEnabled(False)
-        self.z_slice_spin.setEnabled(False)
-
-        # Enable appropriate controls
-        if method == "Slices":
-            self.x_slice_slider.setEnabled(True)
-            self.y_slice_slider.setEnabled(True)
-            self.z_slice_slider.setEnabled(True)
-            self.x_slice_spin.setEnabled(True)
-            self.y_slice_spin.setEnabled(True)
-            self.z_slice_spin.setEnabled(True)
-
-# Color bar methods removed - PyVista handles color bar automatically
 
     def setVolume(self, volume):
         self.current_volume = volume
@@ -9900,12 +10735,6 @@ class VMMMainWindow(QMainWindow):
 
         # Switch to visualization tab
         self.tabs.setCurrentWidget(self.volume_tab)
-
-    def updateStatus(self, message):
-        self.status_label.setText(message)
-
-    def updateProgress(self, value):
-        self.progress_bar.setValue(value)
 
     def showProgress(self, show):
         self.progress_bar.setVisible(show)

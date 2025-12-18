@@ -66,7 +66,8 @@ class FiberTrajectory:
         seed: int = 42,
         reference_vector: list = None,
         vf_map: np.ndarray = None,
-        vf_roi_bounds: tuple = None
+        vf_roi_bounds: tuple = None,
+        polygon_mask: np.ndarray = None
     ) -> np.ndarray:
         """
         Initialize fiber positions using Poisson disk sampling.
@@ -83,6 +84,8 @@ class FiberTrajectory:
             vf_map: Optional 3D volume fraction map for weighted sampling.
                    Higher Vf regions will have more fibers.
             vf_roi_bounds: Bounds of Vf map (z_min, z_max, y_min, y_max, x_min, x_max).
+            polygon_mask: Optional 2D boolean mask for polygon ROI.
+                         Only generate fibers inside the polygon region.
 
         Returns:
             Initial fiber center positions as (N, 2) array.
@@ -94,6 +97,9 @@ class FiberTrajectory:
         # Store Vf map for resampling
         self.vf_map = vf_map
         self.vf_roi_bounds = vf_roi_bounds
+
+        # Store polygon mask for filtering
+        self.polygon_mask = polygon_mask
 
         # Determine propagation axis from reference vector
         if reference_vector is None:
@@ -179,6 +185,24 @@ class FiberTrajectory:
             if len(points) > num_fibers:
                 # Limit to target number of fibers (uniform sampling)
                 points = points[:num_fibers]
+
+        # Apply polygon mask filter if provided
+        if polygon_mask is not None:
+            # Filter points to be inside the polygon
+            # Points are in (x, y) format, mask is in (y, x) format
+            mask_h, mask_w = polygon_mask.shape
+            inside_polygon = np.zeros(len(points), dtype=bool)
+
+            for i, (x, y) in enumerate(points):
+                # Convert to integer indices
+                ix, iy = int(round(x)), int(round(y))
+                # Check if within mask bounds and inside polygon
+                if 0 <= iy < mask_h and 0 <= ix < mask_w:
+                    inside_polygon[i] = polygon_mask[iy, ix]
+
+            points_before = len(points)
+            points = points[inside_polygon]
+            self._log(f"Polygon mask applied: {points_before} -> {len(points)} fibers inside polygon")
 
         self._log(f"Final number of fibers: {len(points)}")
 
