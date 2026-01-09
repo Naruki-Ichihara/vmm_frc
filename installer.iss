@@ -3,7 +3,7 @@
 
 #define MyAppName "VMM-FRC"
 #define MyAppFullName "Virtual Microstructure Modeling for Fiber Reinforced Polymer Composites"
-#define MyAppVersion "0.0.7"
+#define MyAppVersion "0.0.14"
 #define MyAppPublisher "Naruki-Ichihara"
 #define MyAppURL "https://github.com/Naruki-Ichihara/vmm-frc"
 #define MyAppExeName "VMM-FRC.exe"

@@ -6,6 +6,9 @@ from skimage.measure import label, regionprops
 from scipy import ndimage
 import pandas as pd
 from typing import Optional, Tuple, Union, List, Dict
+from vmm.logger import get_logger
+
+logger = get_logger()
 
 def drop_edges_3D(width: int, volume: np.ndarray) -> np.ndarray:
     """
@@ -60,10 +63,15 @@ def compute_structure_tensor(volume: np.ndarray, noise_scale: int, mode: str = '
     """
     if volume.ndim != 3:
         raise ValueError("Input volume must be 3D.")
+
+    logger.info(f"Computing structure tensor: volume shape={volume.shape}, noise_scale={noise_scale}")
+
     tensor_list = structure_tensor(volume, sigma=noise_scale, mode=mode)
     tensors = np.empty((6, *tensor_list[0].shape), dtype=np.float32)
     for i, tensor in enumerate(tensor_list):
         tensors[i] = tensor
+
+    logger.info(f"Structure tensor computed: output shape={tensors.shape}")
     return tensors
 
 @numba.njit(parallel=True, cache=True)
@@ -152,16 +160,19 @@ def compute_orientation(structure_tensor: np.ndarray, reference_vector: Optional
         Eigenvector signs are normalized for consistency (x-component made positive).
     """
     if reference_vector is None:
-        print("[INFO] Computing orientation function without reference vector.")
-        print("[INFO] Progressing...")
+        logger.info("Computing orientation function without reference vector")
+        logger.debug(f"Structure tensor shape: {structure_tensor.shape}")
         theta, phi = _orientation_function(structure_tensor)
-        print("[INFO] Progress complete.")
+        logger.info(f"Orientation computed: theta shape={theta.shape}, phi shape={phi.shape}")
+        logger.debug(f"Theta range: [{np.min(theta):.2f}, {np.max(theta):.2f}] degrees")
+        logger.debug(f"Phi range: [{np.min(phi):.2f}, {np.max(phi):.2f}] degrees")
         return theta, phi
     else:
-        print("[INFO] Computing orientation function with reference vector.")
-        print("[INFO] Progressing...")
+        logger.info(f"Computing orientation function with reference vector: {reference_vector}")
+        logger.debug(f"Structure tensor shape: {structure_tensor.shape}")
         theta = _orientation_function_reference(structure_tensor, reference_vector)
-        print("[INFO] Progress complete.")
+        logger.info(f"Orientation computed: theta shape={theta.shape}")
+        logger.debug(f"Theta range: [{np.min(theta):.2f}, {np.max(theta):.2f}] degrees")
         return theta
 
 

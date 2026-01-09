@@ -8,6 +8,9 @@ from segmented CT images where fibers and matrix regions are identified.
 import numpy as np
 from scipy import ndimage
 from typing import Optional, Tuple, Union
+from vmm.logger import get_logger
+
+logger = get_logger()
 
 
 def estimate_local_vf(
@@ -56,6 +59,10 @@ def estimate_local_vf(
         >>> print(vf.shape)
         (4, 4)
     """
+    logger.info(f"Estimating local Vf: input shape={segmentation.shape}, fiber_label={fiber_label}, window_size={window_size}")
+    if void_label is not None:
+        logger.debug(f"Void exclusion enabled: void_label={void_label}")
+
     # Create binary fiber mask
     fiber_mask = (segmentation == fiber_label).astype(np.float64)
 
@@ -69,6 +76,7 @@ def estimate_local_vf(
         valid_mask = None
 
     if gaussian_sigma is not None:
+        logger.debug(f"Using Gaussian averaging: sigma={gaussian_sigma}")
         # Gaussian-weighted averaging
         fiber_sum = ndimage.gaussian_filter(fiber_mask, sigma=gaussian_sigma)
         if valid_mask is not None:
@@ -78,6 +86,7 @@ def estimate_local_vf(
         else:
             vf_map = fiber_sum
     else:
+        logger.debug(f"Using box averaging: window_size={window_size}")
         # Box averaging using uniform filter
         if isinstance(window_size, int):
             size = window_size
@@ -95,6 +104,8 @@ def estimate_local_vf(
     if normalize:
         # Ensure values are in [0, 1] range
         vf_map = np.clip(vf_map, 0.0, 1.0)
+
+    logger.info(f"Local Vf computed: output shape={vf_map.shape}, mean={np.mean(vf_map):.3f}, range=[{np.min(vf_map):.3f}, {np.max(vf_map):.3f}]")
 
     return vf_map
 
@@ -134,6 +145,8 @@ def estimate_vf_distribution(
             - 'global_vf': Global fiber volume fraction
             - 'void_fraction': Void fraction (if void_label provided)
     """
+    logger.info(f"Estimating Vf distribution: input shape={segmentation.shape}, bins={bins}")
+
     # Calculate local Vf map
     vf_map = estimate_local_vf(
         segmentation,
@@ -189,6 +202,10 @@ def estimate_vf_distribution(
         'void_fraction': void_fraction
     }
 
+    logger.info(f"Vf distribution computed: mean={stats['mean']:.3f}, std={stats['std']:.3f}, global_vf={global_vf:.3f}")
+    if void_label is not None:
+        logger.debug(f"Void fraction: {void_fraction:.3f}")
+
     return hist, bin_edges, stats
 
 
@@ -220,6 +237,8 @@ def estimate_vf_slice_by_slice(
         raise ValueError("Input must be a 3D volume")
 
     n_slices = segmentation.shape[axis]
+    logger.info(f"Computing slice-by-slice Vf: n_slices={n_slices}, axis={axis}")
+
     slice_indices = np.arange(n_slices)
     vf_per_slice = np.zeros(n_slices)
 
@@ -241,6 +260,8 @@ def estimate_vf_slice_by_slice(
         )
 
         vf_per_slice[i] = np.mean(vf_map)
+
+    logger.info(f"Slice-by-slice Vf completed: mean_vf={np.mean(vf_per_slice):.3f}, range=[{np.min(vf_per_slice):.3f}, {np.max(vf_per_slice):.3f}]")
 
     return slice_indices, vf_per_slice
 
@@ -271,12 +292,17 @@ def compute_vf_map_3d(
     if segmentation.ndim != 3:
         raise ValueError("Input must be a 3D volume")
 
-    return estimate_local_vf(
+    logger.info(f"Computing 3D Vf map: input shape={segmentation.shape}, window_size={window_size}")
+
+    result = estimate_local_vf(
         segmentation,
         fiber_label=fiber_label,
         window_size=window_size,
         gaussian_sigma=gaussian_sigma
     )
+
+    logger.info(f"3D Vf map computed: output shape={result.shape}")
+    return result
 
 
 def threshold_otsu(image: np.ndarray) -> Tuple[np.ndarray, float]:
@@ -293,8 +319,10 @@ def threshold_otsu(image: np.ndarray) -> Tuple[np.ndarray, float]:
     """
     from skimage.filters import threshold_otsu as skimage_otsu
 
+    logger.debug(f"Computing Otsu threshold: input shape={image.shape}")
     threshold = skimage_otsu(image)
     binary = (image > threshold).astype(np.uint8)
+    logger.info(f"Otsu threshold computed: threshold={threshold:.2f}, fiber_fraction={np.mean(binary):.3f}")
 
     return binary, threshold
 
@@ -317,12 +345,15 @@ def threshold_percentile(
         - binary: Binary segmentation (1=fiber, 0=matrix)
         - threshold: Computed threshold value
     """
+    logger.debug(f"Computing percentile threshold: percentile={percentile}, invert={invert}")
     threshold = np.percentile(image, percentile)
 
     if invert:
         binary = (image < threshold).astype(np.uint8)
     else:
         binary = (image > threshold).astype(np.uint8)
+
+    logger.info(f"Percentile threshold computed: threshold={threshold:.2f}, fiber_fraction={np.mean(binary):.3f}")
 
     return binary, threshold
 
@@ -345,6 +376,8 @@ def apply_morphological_cleaning(
     """
     from scipy.ndimage import binary_opening, binary_closing
 
+    logger.info(f"Applying morphological cleaning: input shape={segmentation.shape}, opening_size={opening_size}, closing_size={closing_size}")
+
     # Create structuring element based on dimensionality
     if segmentation.ndim == 2:
         struct_open = np.ones((opening_size, opening_size))
@@ -356,11 +389,16 @@ def apply_morphological_cleaning(
     # Apply opening to remove small noise
     if opening_size > 0:
         cleaned = binary_opening(segmentation, structure=struct_open)
+        logger.debug(f"Opening applied: removed {np.sum(segmentation) - np.sum(cleaned)} pixels")
     else:
         cleaned = segmentation.copy()
 
     # Apply closing to fill small holes
     if closing_size > 0:
+        before_closing = np.sum(cleaned)
         cleaned = binary_closing(cleaned, structure=struct_close)
+        logger.debug(f"Closing applied: added {np.sum(cleaned) - before_closing} pixels")
+
+    logger.info(f"Morphological cleaning complete: final fiber fraction={np.mean(cleaned):.3f}")
 
     return cleaned.astype(np.uint8)

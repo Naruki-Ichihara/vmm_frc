@@ -8,6 +8,9 @@ orientation tensor data from CT scan analysis.
 import numpy as np
 from scipy.stats.qmc import PoissonDisk
 from scipy.spatial import KDTree
+from vmm.logger import get_logger
+
+logger = get_logger()
 from scipy.ndimage import map_coordinates, distance_transform_edt, gaussian_filter1d
 from skimage.feature import peak_local_max
 from skimage.segmentation import watershed
@@ -355,9 +358,9 @@ class FiberTrajectory:
         dim1_max = structure_tensor.shape[2] - 1  # y
 
         n_fibers = len(self.points)
-        print(f"[INFO] Propagating {n_fibers} fibers along Z-axis through {n_slices} slices...")
+        logger.info(f"Propagating {n_fibers} fibers along Z-axis through {n_slices} slices...")
         if resample_interval > 0:
-            print(f"[INFO] Resampling enabled every {resample_interval} slices")
+            logger.info(f"Resampling enabled every {resample_interval} slices")
 
         # Compute eigenvectors for all slices (Z-axis propagation)
         eigenvectors = _compute_eigenvectors(structure_tensor)
@@ -416,7 +419,7 @@ class FiberTrajectory:
         for s in range(1, n_slices):
             if s % 50 == 0:
                 active_count = np.sum(active)
-                print(f"[INFO] Processing slice {s}/{n_slices} (active fibers: {active_count}, total: {n_fibers})")
+                logger.info(f"Processing slice {s}/{n_slices} (active fibers: {active_count}, total: {n_fibers})")
 
             # Get direction field at current slice
             # eigenvectors shape: (4, n_slices, dim1, dim0) where:
@@ -548,14 +551,14 @@ class FiberTrajectory:
 
             # Early exit if all fibers have stopped
             if stop_at_boundary and np.sum(active) == 0:
-                print(f"[INFO] All fibers have exited the domain at slice {s}")
+                logger.info(f"All fibers have exited the domain at slice {s}")
                 break
 
         self.active_fibers = active
-        msg = f"[INFO] Propagation complete. {stopped_count} fibers stopped at boundary."
+        msg = f"Propagation complete. {stopped_count} fibers stopped at boundary."
         if resampled_count > 0:
             msg += f" {resampled_count} new fibers resampled."
-        print(msg)
+        logger.info(msg)
 
     def propagate_rk4(
         self,
@@ -594,9 +597,9 @@ class FiberTrajectory:
         dim1_max = structure_tensor.shape[2] - 1  # y
 
         n_fibers = len(self.points)
-        print(f"[INFO] RK4 Propagating {n_fibers} fibers along Z-axis through {n_slices} slices...")
+        logger.info(f"RK4 Propagating {n_fibers} fibers along Z-axis through {n_slices} slices...")
         if resample_interval > 0:
-            print(f"[INFO] Resampling enabled every {resample_interval} slices")
+            logger.info(f"Resampling enabled every {resample_interval} slices")
 
         # Compute eigenvectors for all slices (Z-axis propagation)
         eigenvectors = _compute_eigenvectors(structure_tensor)
@@ -701,7 +704,7 @@ class FiberTrajectory:
         for s in range(1, n_slices):
             if s % 50 == 0:
                 active_count = np.sum(active)
-                print(f"[INFO] RK4 Processing slice {s}/{n_slices} (active fibers: {active_count}, total: {n_fibers})")
+                logger.info(f"RK4 Processing slice {s}/{n_slices} (active fibers: {active_count}, total: {n_fibers})")
 
             # RK4 integration: compute k1, k2, k3, k4
             h = 1.0  # Step size (1 slice)
@@ -803,14 +806,14 @@ class FiberTrajectory:
             current_points = new_points
 
             if stop_at_boundary and np.sum(active) == 0:
-                print(f"[INFO] All fibers have exited the domain at slice {s}")
+                logger.info(f"All fibers have exited the domain at slice {s}")
                 break
 
         self.active_fibers = active
-        msg = f"[INFO] RK4 Propagation complete. {stopped_count} fibers stopped at boundary."
+        msg = f"RK4 Propagation complete. {stopped_count} fibers stopped at boundary."
         if resampled_count > 0:
             msg += f" {resampled_count} new fibers resampled."
-        print(msg)
+        logger.info(msg)
 
     def propagate_with_detection(
         self,
@@ -866,8 +869,8 @@ class FiberTrajectory:
         # Z-axis propagation (fibers assumed along Z direction)
         # structure_tensor shape is (6, z, y, x)
         # Points from detect_fiber_centers are (x, y) format
-        print(f"[DEBUG] structure_tensor type = {type(structure_tensor)}, shape = {structure_tensor.shape if hasattr(structure_tensor, 'shape') else 'N/A'}")
-        print(f"[DEBUG] volume type = {type(volume)}, shape = {volume.shape if hasattr(volume, 'shape') else 'N/A'}")
+        logger.debug(f"structure_tensor type = {type(structure_tensor)}, shape = {structure_tensor.shape if hasattr(structure_tensor, 'shape') else 'N/A'}")
+        logger.debug(f"volume type = {type(volume)}, shape = {volume.shape if hasattr(volume, 'shape') else 'N/A'}")
 
         n_slices = structure_tensor.shape[1]  # z
         # Cross-section is XY plane
@@ -876,10 +879,12 @@ class FiberTrajectory:
         dim1_max = structure_tensor.shape[2] - 1  # y dimension
 
         n_fibers = len(self.points)
-        print(f"[INFO] Propagating {n_fibers} fibers along Z-axis through {n_slices} slices")
-        print(f"[INFO] Domain bounds: x=[0, {dim0_max}], y=[0, {dim1_max}]")
-        print(f"[INFO] Points range: x=[{self.points[:, 0].min():.1f}, {self.points[:, 0].max():.1f}], y=[{self.points[:, 1].min():.1f}, {self.points[:, 1].max():.1f}]")
-        print(f"[INFO] Detection every {detection_interval} slices...")
+        n_active_initial = np.sum(self.active_fibers)
+        logger.info(f"Propagating {n_fibers} fibers along Z-axis through {n_slices} slices")
+        logger.info(f"Initial active fibers: {n_active_initial}/{n_fibers}")
+        logger.info(f"Domain bounds: x=[0, {dim0_max}], y=[0, {dim1_max}]")
+        logger.info(f"Points range: x=[{self.points[:, 0].min():.1f}, {self.points[:, 0].max():.1f}], y=[{self.points[:, 1].min():.1f}, {self.points[:, 1].max():.1f}]")
+        logger.info(f"Detection every {detection_interval} slices...")
 
         # Compute eigenvectors for all slices (Z-axis propagation)
         eigenvectors = _compute_eigenvectors(structure_tensor)
@@ -977,9 +982,9 @@ class FiberTrajectory:
                 return disp, v_d0, v_d1, v_axial
 
         for s in range(1, n_slices):
-            if s % 50 == 0:
-                active_count = np.sum(active)
-                print(f"[INFO] Processing slice {s}/{n_slices} (active: {active_count}, matched: {matched_count})")
+            active_count = np.sum(active)
+            if s % 50 == 0 or s <= 5:
+                logger.info(f"Processing slice {s}/{n_slices} (active: {active_count}, matched: {matched_count})")
 
             # RK4 integration
             h = 1.0
@@ -1009,6 +1014,8 @@ class FiberTrajectory:
                     min_distance=min_peak_distance
                 )
 
+                logger.debug(f"Slice {s}: Detected {len(detected_centers)} centers, Active fibers: {np.sum(active)}")
+
                 if len(detected_centers) > 0:
                     # Build KD-tree of detected centers
                     detected_tree = KDTree(detected_centers)
@@ -1032,10 +1039,14 @@ class FiberTrajectory:
 
                     predicted_points = new_points
 
+                    logger.debug(f"Slice {s}: Matched {len(matched_detected_indices)}/{len(detected_centers)} detected centers")
+
                     # Add unmatched detected centers as new fibers
                     if add_new_fibers and s % new_fiber_interval == 0:
                         unmatched_indices = [i for i in range(len(detected_centers))
                                             if i not in matched_detected_indices]
+
+                        logger.debug(f"Slice {s}: Found {len(unmatched_indices)} unmatched centers")
 
                         if unmatched_indices:
                             # Filter unmatched centers that are too close to existing active fibers
@@ -1142,7 +1153,7 @@ class FiberTrajectory:
 
             # Store per-fiber trajectory data
             for i in range(n_fibers_current):
-                if i < len(self.fiber_trajectories):
+                if i < len(self.fiber_trajectories) and i < len(self.fiber_azimuth_angles):
                     if active[i] or not stop_at_boundary:
                         if len(self.fiber_trajectories[i]) == 0 or self.fiber_trajectories[i][-1][0] != s:
                             self.fiber_trajectories[i].append((s, predicted_points[i].copy()))
@@ -1158,13 +1169,13 @@ class FiberTrajectory:
             current_points = predicted_points
 
             if stop_at_boundary and np.sum(active) == 0:
-                print(f"[INFO] All fibers have exited the domain at slice {s}")
+                logger.info(f"All fibers have exited the domain at slice {s}")
                 break
 
         self.active_fibers = active
         self.points = current_points  # Update points to include new fibers
-        print(f"[INFO] Propagation with detection complete.")
-        print(f"[INFO] Detections: {detection_count}, Total matches: {matched_count}, New fibers: {new_fiber_count}, Stopped: {stopped_count}")
+        logger.info(f"Propagation with detection complete.")
+        logger.info(f"Detections: {detection_count}, Total matches: {matched_count}, New fibers: {new_fiber_count}, Stopped: {stopped_count}")
 
     def _resample_empty_regions(
         self,

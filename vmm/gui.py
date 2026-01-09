@@ -10,13 +10,16 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QCheckBox, QRadioButton, QSlider, QDoubleSpinBox, QStackedWidget,
                                QButtonGroup, QFrame, QScrollArea, QTabBar,
                                QSizePolicy, QSplitter, QDialog)
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 import cv2 as cv
 from vmm.io import import_image_sequence, trim_image
 from vmm.analysis import compute_structure_tensor, compute_orientation, drop_edges_3D
 from vmm.adjustment import ImageAdjuster, AdjustmentSettings, export_adjustment_settings
+from vmm.logger import get_logger
 import matplotlib
+
+logger = get_logger()
 matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -79,14 +82,33 @@ class ImportDialog(QWidget):
         process_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
         process_layout = QVBoxLayout(process_group)
 
-        self.grayscale_check = QCheckBox("Convert to Grayscale")
-        self.grayscale_check.setChecked(True)
-        process_layout.addWidget(self.grayscale_check)
-
         self.crop_check = QCheckBox("Enable Cropping")
         process_layout.addWidget(self.crop_check)
 
         toolbar_layout.addWidget(process_group)
+
+        # Normalization Group
+        norm_group = QGroupBox("Intensity Normalization")
+        norm_group.setStyleSheet("QGroupBox::title { font-weight: bold; }")
+        norm_layout = QVBoxLayout(norm_group)
+
+        self.normalize_check = QCheckBox("Enable Normalization")
+        self.normalize_check.setToolTip("Correct inter-slice brightness variations")
+        norm_layout.addWidget(self.normalize_check)
+
+        self.normalize_combo = QComboBox()
+        self.normalize_combo.addItems(["mean", "histogram", "minmax"])
+        self.normalize_combo.setToolTip(
+            "mean: Match slice means to global mean\n"
+            "histogram: Match histograms to first slice\n"
+            "minmax: Normalize using global min/max"
+        )
+        self.normalize_combo.setEnabled(False)
+        norm_layout.addWidget(self.normalize_combo)
+
+        self.normalize_check.toggled.connect(self.normalize_combo.setEnabled)
+
+        toolbar_layout.addWidget(norm_group)
 
         toolbar_layout.addStretch()
         layout.addWidget(toolbar)
@@ -265,10 +287,11 @@ class ImportDialog(QWidget):
             'num_digits': self.num_digits_spin.value(),
             'format': self.format_combo.currentText(),
             'initial_number': self.initial_number_spin.value(),
-            'convert_grayscale': self.grayscale_check.isChecked(),
             'crop_enabled': self.crop_check.isChecked(),
             'crop_start': self.crop_start_input.text(),
-            'crop_end': self.crop_end_input.text()
+            'crop_end': self.crop_end_input.text(),
+            'normalize_enabled': self.normalize_check.isChecked(),
+            'normalize_method': self.normalize_combo.currentText()
         }
 
         # Validate parameters
@@ -354,15 +377,16 @@ class ImportWorker(QThread):
             else:
                 process_func = None
 
-            # Determine color conversion
-            cvt_control = None
-            if self.params['convert_grayscale']:
-                cvt_control = cv.COLOR_BGR2GRAY
-
-            self.status.emit(f"Importing {self.params['num_images']} images...")
+            # Determine normalization method
+            normalize_method = None
+            if self.params.get('normalize_enabled', False):
+                normalize_method = self.params.get('normalize_method', 'mean')
+                self.status.emit(f"Importing {self.params['num_images']} images with {normalize_method} normalization...")
+            else:
+                self.status.emit(f"Importing {self.params['num_images']} images...")
             self.progress.emit(25)
 
-            # Import image sequence
+            # Import image sequence (automatically converts to grayscale uint8)
             volume = import_image_sequence(
                 path_template=self.params['path_template'],
                 number_of_images=self.params['num_images'],
@@ -370,7 +394,7 @@ class ImportWorker(QThread):
                 format=self.params['format'],
                 initial_number=self.params['initial_number'],
                 process=process_func,
-                cvt_control=cvt_control
+                normalize=normalize_method
             )
 
             self.progress.emit(100)
@@ -3943,28 +3967,39 @@ class VisualizationTab(QWidget):
                     roi_volume = self.main_window.current_volume[z_min:z_max, y_min:y_max, x_min:x_max]
                     roi_shape = roi_volume.shape
 
-                    # Try to reuse structure tensor from Analysis tab if available
+                    # ALWAYS use structure tensor from Analysis tab - do not compute locally
                     global_st = self.main_window.orientation_data.get('structure_tensor')
-                    roi_structure_tensor = None
+                    cached_roi_name = self.main_window.orientation_data.get('roi_name')
 
-                    if global_st is not None:
-                        # Check if ROI bounds are within global structure tensor bounds
-                        # structure_tensor shape is (6, Z, Y, X)
-                        st_z, st_y, st_x = global_st.shape[1], global_st.shape[2], global_st.shape[3]
-                        if z_max <= st_z and y_max <= st_y and x_max <= st_x:
-                            # Extract ROI region from global structure tensor
-                            self.updateMainStatus(f"[{roi_name}] Extracting structure tensor from analysis...")
-                            roi_structure_tensor = global_st[:, z_min:z_max, y_min:y_max, x_min:x_max]
+                    if global_st is None:
+                        # No structure tensor available - show error
+                        QMessageBox.critical(
+                            self,
+                            "Orientation Analysis Required",
+                            f"Structure tensor not found.\n\n"
+                            f"Please compute orientation in the Analysis tab for ROI '{roi_name}' first.\n\n"
+                            f"Steps:\n"
+                            f"1. Go to Analysis tab\n"
+                            f"2. Select '{roi_name}' from ROI list\n"
+                            f"3. Click 'Compute Orientation'"
+                        )
+                        return
 
-                            # Verify extracted tensor has valid dimensions
-                            if roi_structure_tensor.shape[1] == 0 or roi_structure_tensor.shape[2] == 0 or roi_structure_tensor.shape[3] == 0:
-                                roi_structure_tensor = None
+                    # Check if the cached structure tensor is for the same ROI
+                    if cached_roi_name != roi_name:
+                        QMessageBox.critical(
+                            self,
+                            "ROI Mismatch",
+                            f"Cached orientation data is for ROI '{cached_roi_name}', but you selected '{roi_name}'.\n\n"
+                            f"Please compute orientation in the Analysis tab for ROI '{roi_name}' first."
+                        )
+                        return
 
-                    if roi_structure_tensor is None:
-                        # Compute structure tensor for this ROI (fallback)
-                        self.updateMainStatus(f"[{roi_name}] Computing structure tensor...")
-                        noise_scale = self.main_window.noise_scale_slider.value() if hasattr(self.main_window, 'noise_scale_slider') else 10
-                        roi_structure_tensor = compute_structure_tensor(roi_volume, noise_scale=noise_scale)
+                    # Use the cached structure tensor (already in ROI coordinates)
+                    self.updateMainStatus(f"[{roi_name}] Using structure tensor from Analysis tab...")
+                    print(f"[INFO] Reusing structure tensor from Analysis tab for ROI '{roi_name}'")
+                    print(f"[DEBUG] Structure tensor shape: {global_st.shape}")
+                    roi_structure_tensor = global_st
 
                     # Create fiber trajectory object
                     fiber_traj = FiberTrajectory(
@@ -4049,20 +4084,7 @@ class VisualizationTab(QWidget):
                                 self.updateMainStatus(f"[{roi_name}] No centers inside polygon, skipping...")
                                 continue
 
-                            # Initialize points
-                            fiber_traj.points = initial_centers
-                            fiber_traj.trajectories = [(0, initial_centers.copy())]
-                            fiber_traj.angles = [np.zeros(len(initial_centers))]
-                            fiber_traj.azimuths = [np.zeros(len(initial_centers))]
-
-                            # Initialize per-fiber trajectory data
-                            n_fibers = len(initial_centers)
-                            fiber_traj.fiber_trajectories = [[(0, initial_centers[i].copy())] for i in range(n_fibers)]
-                            fiber_traj.fiber_angles = [[0.0] for _ in range(n_fibers)]
-                            fiber_traj.fiber_azimuths = [[0.0] for _ in range(n_fibers)]
-                            fiber_traj.active_fibers = np.ones(n_fibers, dtype=bool)
-
-                            # Exclude fibers near the boundary from tracking (same as propagation boundary check)
+                            # Exclude fibers near the boundary BEFORE initializing trajectories
                             boundary_margin = fiber_traj.fiber_diameter / 2.0
                             prop_axis = fiber_traj.propagation_axis
                             if prop_axis == 2:  # Z-axis
@@ -4081,10 +4103,33 @@ class VisualizationTab(QWidget):
                                 (initial_centers[:, 1] < boundary_margin) |
                                 (initial_centers[:, 1] > dim0_max - boundary_margin)
                             )
-                            fiber_traj.active_fibers = ~near_boundary
                             n_excluded = np.sum(near_boundary)
                             if n_excluded > 0:
-                                print(f"[INFO] [{roi_name}] Excluded {n_excluded} fibers near boundary (margin={boundary_margin:.1f}px)")
+                                logger.info(f"[{roi_name}] Excluded {n_excluded} fibers near boundary (margin={boundary_margin:.1f}px)")
+
+                            # Keep only non-boundary fibers
+                            valid_fibers = ~near_boundary
+                            initial_centers = initial_centers[valid_fibers]
+                            diameters = diameters[valid_fibers]
+
+                            if len(initial_centers) == 0:
+                                self.updateMainStatus(f"[{roi_name}] No valid centers after boundary exclusion, skipping...")
+                                continue
+
+                            # Initialize points
+                            fiber_traj.points = initial_centers
+                            fiber_traj.trajectories = [(0, initial_centers.copy())]
+                            fiber_traj.angles = [np.zeros(len(initial_centers))]
+                            fiber_traj.azimuths = [np.zeros(len(initial_centers))]
+
+                            # Initialize per-fiber trajectory data (only for valid fibers)
+                            n_fibers = len(initial_centers)
+                            fiber_traj.fiber_trajectories = [[(0, initial_centers[i].copy())] for i in range(n_fibers)]
+                            fiber_traj.fiber_angles = [[0.0] for _ in range(n_fibers)]
+                            fiber_traj.fiber_azimuths = [[0.0] for _ in range(n_fibers)]
+                            fiber_traj.fiber_azimuth_angles = [[0.0] for _ in range(n_fibers)]
+                            # All fibers are active (boundary fibers already excluded)
+                            fiber_traj.active_fibers = np.ones(n_fibers, dtype=bool)
                     else:
                         # Use Poisson disk sampling (original behavior)
                         self.updateMainStatus(f"[{roi_name}] Creating fiber distribution...")
@@ -5501,8 +5546,10 @@ class VisualizationTab(QWidget):
 
                 if per_fiber_trajs and len(per_fiber_trajs) > 0:
                     # Use per-fiber trajectory data (more accurate for variable-length trajectories)
+                    skipped_count = 0
                     for fiber_idx, traj in enumerate(per_fiber_trajs):
                         if len(traj) < 2:
+                            skipped_count += 1
                             continue  # Skip fibers with less than 2 points
 
                         fiber_points = []
@@ -5552,6 +5599,9 @@ class VisualizationTab(QWidget):
                             all_lines.extend(line)
                             point_offset += n_pts
                             global_fiber_idx += 1
+
+                    if skipped_count > 0:
+                        logger.debug(f"[{roi_name}] Skipped {skipped_count} fibers with <2 points (total: {len(per_fiber_trajs)})")
                 else:
                     # Fallback to slice-based trajectories data
                     trajectories = fiber_traj.trajectories
@@ -5694,10 +5744,20 @@ class VisualizationTab(QWidget):
             polydata.save(filename)
 
             arrays_str = "\n".join(f"- {a}" for a in exported_arrays)
+
+            # Count total and exported fibers
+            total_fiber_count = 0
+            for fiber_traj, offset, roi_name in trajectories_to_process:
+                per_fiber_trajs = getattr(fiber_traj, 'fiber_trajectories', None)
+                if per_fiber_trajs:
+                    total_fiber_count += len(per_fiber_trajs)
+
             QMessageBox.information(
                 self, "Export Successful",
                 f"Fiber trajectories exported to:\n{filename}\n\n"
-                f"Total fibers: {global_fiber_idx}\n"
+                f"Total fibers in memory: {total_fiber_count}\n"
+                f"Exported fibers (≥2 points): {global_fiber_idx}\n"
+                f"Skipped fibers (<2 points): {total_fiber_count - global_fiber_idx}\n"
                 f"Total points: {len(all_points)}\n\n"
                 f"Exported scalar arrays:\n{arrays_str}"
             )
@@ -6633,17 +6693,17 @@ class AnalysisTab(QWidget):
                     if roi_name in main_window.viewer.rois:
                         bounds = main_window.viewer.rois[roi_name]['bounds']
                         z_min, z_max, y_min, y_max, x_min, x_max = bounds
-                        print(f"Computing orientation for {roi_name}: z[{z_min}:{z_max}], y[{y_min}:{y_max}], x[{x_min}:{x_max}]")
+                        logger.info(f"Computing orientation for {roi_name}: z[{z_min}:{z_max}], y[{y_min}:{y_max}], x[{x_min}:{x_max}]")
                         volume = base_volume[z_min:z_max, y_min:y_max, x_min:x_max].copy()
 
                         # Get polygon mask if available
                         polygon_mask_3d = main_window.viewer.getROIPolygonMask3D(roi_name)
 
-                        print(f"ROI volume shape: {volume.shape}")
+                        logger.info(f"ROI volume shape: {volume.shape}")
                         self._computeOrientationForROI(main_window, volume, roi_name, polygon_mask_3d)
             else:
                 # No ROIs - compute for entire volume
-                print("No ROIs selected - computing for entire volume")
+                logger.info("No ROIs selected - computing for entire volume")
                 volume = base_volume
                 roi_name = None
                 self._computeOrientationForROI(main_window, volume, roi_name, None)
@@ -6715,6 +6775,7 @@ class AnalysisTab(QWidget):
             main_window.orientation_data['trim_width'] = trim_width
             main_window.orientation_data['structure_tensor'] = structure_tensor
             main_window.orientation_data['noise_scale'] = noise_scale
+            main_window.orientation_data['roi_name'] = roi_name  # Store which ROI this data is for
 
             main_window.showProgress(False)
             main_window.status_label.setText(f"Analysis complete{roi_label} (Noise scale: {noise_scale})")
@@ -10410,6 +10471,7 @@ class VMMMainWindow(QMainWindow):
         from vmm.theme import get_splitter_style, get_progress_bar_style, get_status_bar_style
         self.content_splitter.setStyleSheet(get_splitter_style())
 
+        # Add content splitter directly to main layout
         main_layout.addWidget(self.content_splitter)
 
         # Progress bar at bottom
@@ -10423,6 +10485,28 @@ class VMMMainWindow(QMainWindow):
 
         self.status_label = QLabel("Ready")
         self.statusBar().addWidget(self.status_label)
+
+        # Add log viewer button to status bar
+        self.log_viewer_btn = QPushButton("Show Logs")
+        self.log_viewer_btn.setFixedHeight(20)
+        self.log_viewer_btn.setStyleSheet(
+            "QPushButton { "
+            "  background-color: #4CAF50; "
+            "  color: white; "
+            "  border: none; "
+            "  padding: 2px 8px; "
+            "  border-radius: 3px; "
+            "  font-size: 11px; "
+            "} "
+            "QPushButton:hover { "
+            "  background-color: #45a049; "
+            "} "
+            "QPushButton:pressed { "
+            "  background-color: #3d8b40; "
+            "}"
+        )
+        self.log_viewer_btn.clicked.connect(self.showLogViewer)
+        self.statusBar().addPermanentWidget(self.log_viewer_btn)
 
     def _createVolumeRibbon(self):
         """Create Volume tab ribbon toolbar"""
@@ -11609,6 +11693,12 @@ class VMMMainWindow(QMainWindow):
                 self, "Export Failed",
                 "Failed to export adjustment settings."
             )
+
+    def showLogViewer(self):
+        """Show log viewer dialog"""
+        from vmm.log_viewer import LogViewerDialog
+        dialog = LogViewerDialog(self)
+        dialog.exec()
 
 def main():
     from vmm.splash import SplashScreen

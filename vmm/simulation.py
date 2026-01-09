@@ -4,6 +4,9 @@ from scipy.signal import argrelmax, argrelmin, find_peaks
 import scipy.stats as stats
 from dataclasses import dataclass
 from typing import Tuple
+from vmm.logger import get_logger
+
+logger = get_logger()
 
 @dataclass
 class MaterialParams:
@@ -74,6 +77,9 @@ def estimate_compression_strength_from_profile(orientation_profile: np.ndarray,
         weights for different misalignment angles. Applies incremental loading with
         power-law matrix plasticity model.
     """
+    logger.info(f"Computing compression strength from orientation profile: profile_shape={orientation_profile.shape}")
+    logger.debug(f"Material params: E1={material_params.longitudinal_modulus}, E2={material_params.transverse_modulus}, G={material_params.shear_modulus}")
+    logger.debug(f"Analysis params: max_shear_stress={maximum_shear_stress}, max_strain={maximum_axial_strain}, max_misalignment={maximum_fiber_misalignment}°")
 
     E1 = material_params.longitudinal_modulus
     E2 = material_params.transverse_modulus
@@ -86,6 +92,8 @@ def estimate_compression_strength_from_profile(orientation_profile: np.ndarray,
     shear_stress_array = np.linspace(0, maximum_shear_stress, int(maximum_shear_stress/shear_stress_step_size)+1)
     shear_strain_array = (shear_stress_array/G) + K*(shear_stress_array/tau_y)**n
     misalignment_array = np.linspace(0, maximum_fiber_misalignment, int(maximum_fiber_misalignment/fiber_misalignment_step_size)+1)
+
+    logger.debug(f"Discretization: n_shear_steps={len(shear_stress_array)}, n_misalignment_steps={len(misalignment_array)}")
 
     # Matrix initialization
     axial_stress_matrix = np.ndarray((misalignment_array.size, shear_stress_array.size))
@@ -136,14 +144,19 @@ def estimate_compression_strength_from_profile(orientation_profile: np.ndarray,
 
     # Probability distribution of fiber misalignment from measured data
     flatten_orientation_profile = orientation_profile.ravel()
+    logger.debug(f"Orientation profile stats: mean={np.mean(flatten_orientation_profile):.2f}°, std={np.std(flatten_orientation_profile):.2f}°, range=[{np.min(flatten_orientation_profile):.2f}, {np.max(flatten_orientation_profile):.2f}]°")
+
     probability, bins = np.histogram(flatten_orientation_profile,
-                                     bins=int(maximum_fiber_misalignment/fiber_misalignment_step_size), 
+                                     bins=int(maximum_fiber_misalignment/fiber_misalignment_step_size),
                                      density=True, range=(0, maximum_fiber_misalignment))
     for i in range(len(probability)):
         probability[i] = probability[i]*fiber_misalignment_step_size
-    
+
     total_probability = np.sum(probability)
+    logger.debug(f"Probability distribution: total_probability={total_probability:.4f}")
+
     if total_probability < 0.999:
+        logger.warning(f"Low total probability: {total_probability:.4f} < 0.999")
         raise ValueError(f"The range of fiber misalignment is too small. Total probability is {total_probability} less than 1.0.\nConsider using another profile.")
     
     # Weighted axial stress matrix
@@ -161,6 +174,7 @@ def estimate_compression_strength_from_profile(orientation_profile: np.ndarray,
     # ε̄_x = ε_x * (w_k/L_g) + σ_x/E_11 * (1 - w_k/L_g)
     if kink_width is not None and gauge_length is not None and gauge_length > 0:
         w_k_over_L_g = kink_width / gauge_length
+        logger.debug(f"Applying kink correction: w_k={kink_width}, L_g={gauge_length}, ratio={w_k_over_L_g:.4f}")
         axial_strain_array = (axial_strain_array * w_k_over_L_g +
                               superposition_axial_stress_array / E1 * (1 - w_k_over_L_g))
 
@@ -168,9 +182,11 @@ def estimate_compression_strength_from_profile(orientation_profile: np.ndarray,
         compression_strength_index = find_peaks(superposition_axial_stress_array)[0][0]
         compression_strength = superposition_axial_stress_array[compression_strength_index]
         ultimate_strain = axial_strain_array[compression_strength_index]
+        logger.info(f"Compression strength (from profile) found at peak: σ_c={compression_strength:.2f} MPa, ε_ult={ultimate_strain:.4f}")
     else:
         compression_strength = np.max(superposition_axial_stress_array)
         ultimate_strain = axial_strain_array[np.argmax(superposition_axial_stress_array)]
+        logger.info(f"Compression strength (from profile) at maximum: σ_c={compression_strength:.2f} MPa, ε_ult={ultimate_strain:.4f}")
 
     return compression_strength, ultimate_strain, superposition_axial_stress_array, axial_strain_array
 
@@ -216,6 +232,9 @@ def estimate_compression_strength(initial_misalignment: float,
         and negative misalignments symmetrically around the mean value. Requires larger
         misalignment range for highly dispersed distributions.
     """
+    logger.info(f"Computing compression strength with Gaussian distribution: mean={initial_misalignment:.2f}°, std={standard_deviation:.2f}°")
+    logger.debug(f"Material params: E1={material_params.longitudinal_modulus}, E2={material_params.transverse_modulus}, G={material_params.shear_modulus}")
+    logger.debug(f"Analysis params: max_shear_stress={maximum_shear_stress}, max_strain={maximum_axial_strain}, max_misalignment={maximum_fiber_misalignment}°")
 
     E1 = material_params.longitudinal_modulus
     E2 = material_params.transverse_modulus
@@ -228,6 +247,8 @@ def estimate_compression_strength(initial_misalignment: float,
     shear_stress_array = np.linspace(0, maximum_shear_stress, int(maximum_shear_stress/shear_stress_step_size)+1)
     shear_strain_array = (shear_stress_array/G) + K*(shear_stress_array/tau_y)**n
     misalignment_array = np.linspace(0, maximum_fiber_misalignment, int(maximum_fiber_misalignment/fiber_misalignment_step_size)+1)
+
+    logger.debug(f"Discretization: n_shear_steps={len(shear_stress_array)}, n_misalignment_steps={len(misalignment_array)}")
 
     # Matrix initialization
     axial_stress_matrix = np.ndarray((misalignment_array.size, shear_stress_array.size))
@@ -301,7 +322,10 @@ def estimate_compression_strength(initial_misalignment: float,
                         - stats.norm.cdf(np.deg2rad(-fiber_misalignment_step_size/2), mean_value, std_value)
 
     total_probability = np.sum(probabilties_right_array) + np.sum(probabilties_left_array) + probabilty_center
+    logger.debug(f"Probability distribution: total_probability={total_probability:.4f}")
+
     if total_probability < 0.999:
+        logger.warning(f"Low total probability: {total_probability:.4f} < 0.999")
         raise ValueError(f"The range of fiber misalignment is too small. Total probability is {total_probability} less than 1.0.\nPlease increase the range of fiber misalignment.")
 
     # Weighted axial stress matrix
@@ -325,6 +349,7 @@ def estimate_compression_strength(initial_misalignment: float,
     # ε̄_x = ε_x * (w_k/L_g) + σ_x/E_11 * (1 - w_k/L_g)
     if kink_width is not None and gauge_length is not None and gauge_length > 0:
         w_k_over_L_g = kink_width / gauge_length
+        logger.debug(f"Applying kink correction: w_k={kink_width}, L_g={gauge_length}, ratio={w_k_over_L_g:.4f}")
         axial_strain_array = (axial_strain_array * w_k_over_L_g +
                               superposition_axial_stress_array / E1 * (1 - w_k_over_L_g))
 
@@ -332,8 +357,10 @@ def estimate_compression_strength(initial_misalignment: float,
         compression_strength_index = find_peaks(superposition_axial_stress_array)[0][0]
         compression_strength = superposition_axial_stress_array[compression_strength_index]
         ultimate_strain = axial_strain_array[compression_strength_index]
+        logger.info(f"Compression strength (Gaussian) found at peak: σ_c={compression_strength:.2f} MPa, ε_ult={ultimate_strain:.4f}")
     else:
         compression_strength = np.max(superposition_axial_stress_array)
         ultimate_strain = axial_strain_array[np.argmax(superposition_axial_stress_array)]
+        logger.info(f"Compression strength (Gaussian) at maximum: σ_c={compression_strength:.2f} MPa, ε_ult={ultimate_strain:.4f}")
 
     return compression_strength, ultimate_strain, superposition_axial_stress_array, axial_strain_array

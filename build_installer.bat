@@ -35,8 +35,12 @@ set /p VERSION=<temp_version.txt
 del temp_version.txt
 echo Version: %VERSION%
 
-REM Update installer.iss with current version using a separate Python script
-python -c "import re; from vmm import __version__; f=open('installer.iss','r',encoding='utf-8'); c=f.read(); f.close(); c=re.sub(r'#define MyAppVersion \"[^\"]+\"', f'#define MyAppVersion \"{__version__}\"', c); f=open('installer.iss','w',encoding='utf-8'); f.write(c); f.close(); print(f'Updated installer.iss to version {__version__}')"
+REM Update installer.iss with current version
+python update_version.py
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Failed to update installer.iss
+    exit /b 1
+)
 
 echo.
 echo Step 0: Creating icon file...
@@ -72,6 +76,10 @@ REM exit /b 0
 echo.
 echo Step 2: Creating Windows installer with Inno Setup...
 echo ------------------------------------------------------
+
+REM Verify version one more time before compilation
+echo Verifying installer.iss version...
+findstr /C:"#define MyAppVersion" installer.iss
 
 REM Check for Inno Setup
 set ISCC_PATH=
