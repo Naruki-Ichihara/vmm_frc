@@ -76,104 +76,296 @@ def compute_structure_tensor(volume: np.ndarray, noise_scale: int, mode: str = '
 
 @numba.njit(parallel=True, cache=True)
 def _orientation_function(structureTensor: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute tilt angles from structure tensor eigenvectors.
+
+    Array convention: (axial, d1, d0) where axial is the fiber axis direction.
+    Structure tensor components order: [A_aa, A_a1, A_a0, A_11, A_10, A_00]
+    Eigenvector components: [v_axial, v_d1, v_d0] (same order as input array axes)
+
+    Returns:
+        tilt_d0: arctan2(v_d0, v_axial) - tilt angle in d0-axial plane (degrees)
+        tilt_d1: arctan2(v_d1, v_axial) - tilt angle in d1-axial plane (degrees)
+    """
+    # Structure tensor component indices: 0=axial, 1=d1, 2=d0
     symmetricComponents3d = [[0, 0], [0, 1], [0, 2], [1, 1], [1, 2], [2, 2]]
 
-    theta = np.zeros(structureTensor.shape[1:], dtype="<f4")
-    phi = np.zeros(structureTensor.shape[1:], dtype="<f4")
+    tilt_d0 = np.zeros(structureTensor.shape[1:], dtype="<f4")
+    tilt_d1 = np.zeros(structureTensor.shape[1:], dtype="<f4")
 
-    for z in numba.prange(0, structureTensor.shape[1]):
-        for y in range(0, structureTensor.shape[2]):
-            for x in range(0, structureTensor.shape[3]):
+    for a in numba.prange(0, structureTensor.shape[1]):
+        for i1 in range(0, structureTensor.shape[2]):
+            for i0 in range(0, structureTensor.shape[3]):
                 structureTensorLocal = np.empty((3, 3), dtype="<f4")
-                for n, [i, j] in enumerate(symmetricComponents3d):
-                    structureTensorLocal[i, j] = structureTensor[n, z, y, x]
+                for n, (i, j) in enumerate(symmetricComponents3d):
+                    structureTensorLocal[i, j] = structureTensor[n, a, i1, i0]
                     if i != j:
-                        structureTensorLocal[j, i] = structureTensor[n, z, y, x]
+                        structureTensorLocal[j, i] = structureTensor[n, a, i1, i0]
 
                 w, v = np.linalg.eig(structureTensorLocal)
                 m = np.argmin(w)
 
-                selectedEigenVector = v[:, m]
+                # Eigenvector for minimum eigenvalue (fiber direction)
+                # Components: [v_axial, v_d1, v_d0] matching input array axis order
+                eigenvec = v[:, m]
+                v_axial = eigenvec[0]
+                v_d1 = eigenvec[1]
+                v_d0 = eigenvec[2]
 
-                if selectedEigenVector[0] < 0:
-                    selectedEigenVector *= -1
+                # Normalize sign: make axial component positive for consistent orientation
+                if v_axial < 0:
+                    v_axial = -v_axial
+                    v_d1 = -v_d1
+                    v_d0 = -v_d0
 
-                theta[z, y, x] = np.rad2deg(np.arctan2(selectedEigenVector[2], selectedEigenVector[0]))
-                phi[z, y, x] = np.rad2deg(np.arctan2(selectedEigenVector[1], selectedEigenVector[0]))
+                # Compute tilt angles
+                # tilt_d0: angle from axial in d0-axial plane
+                # tilt_d1: angle from axial in d1-axial plane
+                tilt_d0[a, i1, i0] = np.rad2deg(np.arctan2(v_d0, v_axial))
+                tilt_d1[a, i1, i0] = np.rad2deg(np.arctan2(v_d1, v_axial))
 
-    return theta, phi
+    return tilt_d0, tilt_d1
 
 @numba.njit(parallel=True, cache=True)
 def _orientation_function_reference(structureTensor: np.ndarray, reference_vector: np.ndarray) -> np.ndarray:
+    """
+    Compute angle between fiber direction and reference vector.
 
+    Array convention: (axial, d1, d0) where axial is the fiber axis direction.
+    Structure tensor components order: [A_aa, A_a1, A_a0, A_11, A_10, A_00]
+    Eigenvector components: [v_axial, v_d1, v_d0] (same order as input array axes)
+
+    Args:
+        structureTensor: 4D array with shape (6, axial, d1, d0).
+        reference_vector: Reference direction as [axial, d1, d0] (same order as array axes).
+
+    Returns:
+        angle: Angle from reference vector in degrees (0-180).
+    """
+    # Structure tensor component indices: 0=axial, 1=d1, 2=d0
     symmetricComponents3d = [[0, 0], [0, 1], [0, 2], [1, 1], [1, 2], [2, 2]]
 
-    theta = np.zeros(structureTensor.shape[1:], dtype="<f4")
-    axial_vec = np.array(reference_vector, dtype="<f4")
+    angle = np.zeros(structureTensor.shape[1:], dtype="<f4")
+    # Copy reference vector to ensure correct dtype
+    ref_vec = np.empty(3, dtype="<f4")
+    ref_vec[0] = reference_vector[0]
+    ref_vec[1] = reference_vector[1]
+    ref_vec[2] = reference_vector[2]
 
-    for z in numba.prange(0, structureTensor.shape[1]):
-        for y in range(0, structureTensor.shape[2]):
-            for x in range(0, structureTensor.shape[3]):
+    for a in numba.prange(0, structureTensor.shape[1]):
+        for i1 in range(0, structureTensor.shape[2]):
+            for i0 in range(0, structureTensor.shape[3]):
                 structureTensorLocal = np.empty((3, 3), dtype="<f4")
-                for n, [i, j] in enumerate(symmetricComponents3d):
-                    structureTensorLocal[i, j] = structureTensor[n, z, y, x]
+                for n, (i, j) in enumerate(symmetricComponents3d):
+                    structureTensorLocal[i, j] = structureTensor[n, a, i1, i0]
                     if i != j:
-                        structureTensorLocal[j, i] = structureTensor[n, z, y, x]
+                        structureTensorLocal[j, i] = structureTensor[n, a, i1, i0]
 
                 w, v = np.linalg.eig(structureTensorLocal)
                 m = np.argmin(w)
 
-                selectedEigenVector = v[:, m]
+                # Eigenvector for minimum eigenvalue (fiber direction)
+                # Components: [v_axial, v_d1, v_d0] matching input array axis order
+                eigenvec = v[:, m]
 
-                if selectedEigenVector[0] < 0:
-                    selectedEigenVector *= -1
+                # Normalize sign: make axial component positive for consistent orientation
+                if eigenvec[0] < 0:
+                    eigenvec = -eigenvec
 
-                theta[z, y, x] = np.rad2deg(np.arccos(np.dot(selectedEigenVector, axial_vec)))
+                # Clip dot product to [-1, 1] to avoid NaN from numerical errors
+                dot_product = np.dot(eigenvec, ref_vec)
+                if dot_product > 1.0:
+                    dot_product = 1.0
+                elif dot_product < -1.0:
+                    dot_product = -1.0
+                angle[a, i1, i0] = np.rad2deg(np.arccos(dot_product))
 
-    return theta
+    return angle
 
-def compute_orientation(structure_tensor: np.ndarray, reference_vector: Optional[List[float]] = None) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+
+@numba.njit(parallel=True, cache=True)
+def _compute_eigenvectors(structureTensor: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute eigenvectors from structure tensor (parallelized).
+
+    Returns eigenvectors and their sum for average calculation.
+    """
+    symmetricComponents3d = [[0, 0], [0, 1], [0, 2], [1, 1], [1, 2], [2, 2]]
+
+    shape = structureTensor.shape[1:]
+    eigenvectors = np.empty((shape[0], shape[1], shape[2], 3), dtype="<f4")
+    # Per-slice sums for parallel reduction
+    slice_sums = np.zeros((shape[0], 3), dtype="<f8")
+
+    for a in numba.prange(shape[0]):
+        local_sum = np.zeros(3, dtype="<f8")
+        for i1 in range(shape[1]):
+            for i0 in range(shape[2]):
+                structureTensorLocal = np.empty((3, 3), dtype="<f4")
+                for n, (i, j) in enumerate(symmetricComponents3d):
+                    structureTensorLocal[i, j] = structureTensor[n, a, i1, i0]
+                    if i != j:
+                        structureTensorLocal[j, i] = structureTensor[n, a, i1, i0]
+
+                w, v = np.linalg.eig(structureTensorLocal)
+                m = np.argmin(w)
+                eigenvec = v[:, m]
+
+                if eigenvec[0] < 0:
+                    eigenvec = -eigenvec
+
+                eigenvectors[a, i1, i0, 0] = eigenvec[0]
+                eigenvectors[a, i1, i0, 1] = eigenvec[1]
+                eigenvectors[a, i1, i0, 2] = eigenvec[2]
+
+                local_sum[0] += eigenvec[0]
+                local_sum[1] += eigenvec[1]
+                local_sum[2] += eigenvec[2]
+
+        slice_sums[a, 0] = local_sum[0]
+        slice_sums[a, 1] = local_sum[1]
+        slice_sums[a, 2] = local_sum[2]
+
+    return eigenvectors, slice_sums
+
+
+@numba.njit(parallel=True, cache=True)
+def _compute_angles_from_eigenvectors(
+    eigenvectors: np.ndarray, avg_direction: np.ndarray
+) -> np.ndarray:
+    """
+    Compute angles from eigenvectors relative to average direction (parallelized).
+    """
+    shape = eigenvectors.shape[:3]
+    angle = np.zeros(shape, dtype="<f4")
+
+    for a in numba.prange(shape[0]):
+        for i1 in range(shape[1]):
+            for i0 in range(shape[2]):
+                eigenvec = eigenvectors[a, i1, i0]
+
+                dot_product = (eigenvec[0] * avg_direction[0] +
+                              eigenvec[1] * avg_direction[1] +
+                              eigenvec[2] * avg_direction[2])
+                if dot_product > 1.0:
+                    dot_product = 1.0
+                elif dot_product < -1.0:
+                    dot_product = -1.0
+                angle[a, i1, i0] = np.rad2deg(np.arccos(dot_product))
+
+    return angle
+
+
+def _orientation_function_reference_with_average(
+    structureTensor: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute angle from average fiber direction in a single pass.
+
+    First computes the average fiber direction across all voxels,
+    then computes the angle of each voxel relative to this average.
+    This is more efficient than computing eigenvectors twice.
+
+    Both passes are parallelized for performance.
+
+    Array convention: (axial, d1, d0) where axial is the fiber axis direction.
+    Structure tensor components order: [A_aa, A_a1, A_a0, A_11, A_10, A_00]
+    Eigenvector components: [v_axial, v_d1, v_d0] (same order as input array axes)
+
+    Args:
+        structureTensor: 4D array with shape (6, axial, d1, d0).
+
+    Returns:
+        angle: Angle from average direction in degrees (0-180).
+        avg_direction: Normalized average direction vector as [v_axial, v_d1, v_d0].
+    """
+    # First pass: compute eigenvectors (parallelized)
+    eigenvectors, slice_sums = _compute_eigenvectors(structureTensor)
+
+    # Compute average direction from slice sums
+    total_sum = np.sum(slice_sums, axis=0)
+    count = eigenvectors.shape[0] * eigenvectors.shape[1] * eigenvectors.shape[2]
+    avg_vec = total_sum / count
+    norm = np.sqrt(avg_vec[0]**2 + avg_vec[1]**2 + avg_vec[2]**2)
+    if norm > 0:
+        avg_vec = avg_vec / norm
+    avg_direction = avg_vec.astype(np.float32)
+
+    # Second pass: compute angles (parallelized)
+    angle = _compute_angles_from_eigenvectors(eigenvectors, avg_direction)
+
+    return angle, avg_direction
+
+def compute_orientation(
+    structure_tensor: np.ndarray,
+    reference_vector: Optional[Union[List[float], str]] = None
+) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray, Tuple[np.ndarray, np.ndarray]]:
     """
     Extract fiber orientation angles from structure tensor using eigenvalue decomposition.
-    
+
     Computes orientation angles by finding the eigenvector corresponding to the smallest
     eigenvalue of each structure tensor, which represents the direction of minimal
     intensity variation (i.e., the fiber direction).
 
+    Array convention: (axial, d1, d0)
+        - axial: Fiber axis direction (propagation direction, first array axis)
+        - d1: Cross-section first direction (row, second array axis)
+        - d0: Cross-section second direction (column, third array axis)
+
+    Structure tensor components: [A_aa, A_a1, A_a0, A_11, A_10, A_00]
+    Eigenvector components: [v_axial, v_d1, v_d0]
+
     Args:
-        structure_tensor: 4D array with shape (6, depth, height, width) containing
+        structure_tensor: 4D array with shape (6, axial, d1, d0) containing
                          the symmetric structure tensor components.
-        reference_vector: Optional 3D reference direction vector [x, y, z].
-                         If provided, returns only the angle relative to this reference.
-                         If None, returns both theta and phi spherical angles.
+        reference_vector: Optional reference direction specification:
+                         - None: Returns tilt angles in d0-axial and d1-axial planes.
+                         - List[float]: 3D reference direction vector [axial, d1, d0].
+                           Returns angle relative to this reference.
+                         - "average": Uses the average fiber direction computed from
+                           all voxels as the reference vector. Returns both angle array
+                           and the computed reference vector.
 
     Returns:
         If reference_vector is None:
-            Tuple of (theta, phi) arrays with shape (depth, height, width).
-            theta: Azimuthal angle in degrees (-180 to 180).
-            phi: Elevation angle in degrees (-90 to 90).
-        If reference_vector is provided:
+            Tuple of (tilt_d0, tilt_d1) arrays with shape (axial, d1, d0).
+            tilt_d0: Tilt angle in d0-axial plane in degrees (-180 to 180), arctan2(v_d0, v_axial).
+            tilt_d1: Tilt angle in d1-axial plane in degrees (-180 to 180), arctan2(v_d1, v_axial).
+        If reference_vector is a list:
             Single array of angles in degrees (0 to 180) relative to reference.
-            
+        If reference_vector is "average":
+            Tuple of (angle_array, computed_reference_vector) where:
+            - angle_array: Angles in degrees (0 to 180) relative to the average direction.
+            - computed_reference_vector: The computed average direction as [axial, d1, d0].
+
     Note:
-        Uses JIT compilation for performance. Progress messages printed during computation.
-        Eigenvector signs are normalized for consistency (x-component made positive).
+        Uses JIT compilation for performance.
+        Eigenvector signs are normalized (axial component made positive) for consistent orientation.
     """
     if reference_vector is None:
         logger.info("Computing orientation function without reference vector")
         logger.debug(f"Structure tensor shape: {structure_tensor.shape}")
-        theta, phi = _orientation_function(structure_tensor)
-        logger.info(f"Orientation computed: theta shape={theta.shape}, phi shape={phi.shape}")
-        logger.debug(f"Theta range: [{np.min(theta):.2f}, {np.max(theta):.2f}] degrees")
-        logger.debug(f"Phi range: [{np.min(phi):.2f}, {np.max(phi):.2f}] degrees")
-        return theta, phi
+        tilt_d0, tilt_d1 = _orientation_function(structure_tensor)
+        logger.info(f"Orientation computed: tilt_d0 shape={tilt_d0.shape}, tilt_d1 shape={tilt_d1.shape}")
+        logger.debug(f"tilt_d0 range: [{np.min(tilt_d0):.2f}, {np.max(tilt_d0):.2f}] degrees")
+        logger.debug(f"tilt_d1 range: [{np.min(tilt_d1):.2f}, {np.max(tilt_d1):.2f}] degrees")
+        return tilt_d0, tilt_d1
+    elif reference_vector == "average":
+        logger.info("Computing orientation function with average reference vector")
+        logger.debug(f"Structure tensor shape: {structure_tensor.shape}")
+        # Compute average direction and angles in a single pass
+        angle, avg_direction = _orientation_function_reference_with_average(structure_tensor)
+        logger.info(f"Computed average direction: [{avg_direction[0]:.4f}, {avg_direction[1]:.4f}, {avg_direction[2]:.4f}]")
+        logger.info(f"Orientation computed: angle shape={angle.shape}")
+        logger.debug(f"Angle range: [{np.min(angle):.2f}, {np.max(angle):.2f}] degrees")
+        return angle, avg_direction
     else:
         logger.info(f"Computing orientation function with reference vector: {reference_vector}")
         logger.debug(f"Structure tensor shape: {structure_tensor.shape}")
-        theta = _orientation_function_reference(structure_tensor, reference_vector)
-        logger.info(f"Orientation computed: theta shape={theta.shape}")
-        logger.debug(f"Theta range: [{np.min(theta):.2f}, {np.max(theta):.2f}] degrees")
-        return theta
+        angle = _orientation_function_reference(structure_tensor, reference_vector)
+        logger.info(f"Orientation computed: angle shape={angle.shape}")
+        logger.debug(f"Angle range: [{np.min(angle):.2f}, {np.max(angle):.2f}] degrees")
+        return angle
 
 
 # =============================================================================

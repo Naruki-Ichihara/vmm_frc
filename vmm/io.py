@@ -257,8 +257,12 @@ def import_image_sequence(path_template: str,
                           path_for_save: Optional[str] = None,
                           process: Optional[Callable[[np.ndarray], np.ndarray]] = None,
                           normalize: Optional[str] = None) -> np.ndarray:
-    """Import image sequence as volume. The convention is assumed to be
-    [plane, row, column], or with the direction [z, y, x].
+    """Import image sequence as volume.
+
+    Array convention: (axial, d1, d0)
+        - axial: Fiber axis direction (image sequence/slice index)
+        - d1: Cross-section first direction (row, increases downward in image)
+        - d0: Cross-section second direction (column, increases rightward in image)
 
     All images are automatically converted to grayscale uint8 format.
 
@@ -310,3 +314,148 @@ def import_image_sequence(path_template: str,
         np.save(path_for_save, volume)
 
     return volume
+
+
+def export_orientation_to_vtk(filepath: str, tilt_d0: np.ndarray, tilt_d1: np.ndarray = None,
+                              origin_offset: int = 0) -> None:
+    """Export orientation data to VTK format for ParaView visualization.
+
+    Internal coordinate system (right-hand, Y-down):
+        - X (d0): column, increases rightward
+        - Y (d1): row, increases downward
+        - Z (axial): fiber direction, into screen
+
+    VTK coordinate system (right-hand, Y-up):
+        - VTK X = d0 (column, rightward)
+        - VTK Y = d1 (row index, but VTK displays Y-up)
+        - VTK Z = axial (fiber direction)
+
+    Note: VTK standard is Y-up, so the visualization in ParaView will show
+    the Y-axis pointing upward. To match the GUI display (Y-down), rotate
+    the view in ParaView by 180° around the X-axis.
+
+    Args:
+        filepath: Output file path (.vtk or .vti extension).
+        tilt_d0: 3D array with shape (axial, d1, d0) containing tilt angles in d0-axial plane.
+        tilt_d1: Optional 3D array with shape (axial, d1, d0) containing tilt angles in d1-axial plane.
+        origin_offset: Offset in pixels to align with CT volume (e.g., noise_scale from
+                       structure tensor computation). Applied equally to all axes.
+
+    """
+    import pyvista as pv
+
+    logger.info(f"Exporting orientation to VTK: {filepath}")
+    logger.debug(f"Input shape: {tilt_d0.shape}, origin_offset: {origin_offset}")
+
+    # Transpose from internal (axial, d1, d0) to VTK (d0, d1, axial) = (X, Y, Z)
+    tilt_d0_vtk = np.transpose(tilt_d0, (2, 1, 0))
+
+    # Create VTK ImageData (uniform grid)
+    grid = pv.ImageData()
+    grid.dimensions = np.array(tilt_d0_vtk.shape) + 1  # VTK needs n+1 for cell data
+    grid.spacing = (1, 1, 1)
+    # Set origin offset to align with CT volume center
+    # Structure tensor computation cuts edges by noise_scale pixels on each side
+    grid.origin = (origin_offset, origin_offset, origin_offset)
+
+    # Add tilt_d0 as cell data (Fortran order for VTK)
+    grid.cell_data['Tilt_d0'] = tilt_d0_vtk.flatten(order='F')
+
+    # Add tilt_d1 if provided
+    if tilt_d1 is not None:
+        tilt_d1_vtk = np.transpose(tilt_d1, (2, 1, 0))
+        grid.cell_data['Tilt_d1'] = tilt_d1_vtk.flatten(order='F')
+
+    grid.save(filepath)
+    logger.info(f"Orientation exported: shape={tilt_d0.shape} -> VTK dimensions={grid.dimensions}, origin={grid.origin}")
+
+
+def export_void_to_vtk(filepath: str, void_mask: np.ndarray,
+                       roi_bounds: list = None, polygon_mask: np.ndarray = None) -> dict:
+    """Export void regions as closed surface mesh to VTK format.
+
+    Uses marching cubes algorithm to generate an isosurface mesh from the binary void mask.
+
+    Internal coordinate system (right-hand, Y-down):
+        - X (d0): column, increases rightward
+        - Y (d1): row, increases downward
+        - Z (axial): fiber direction, into screen
+
+    VTK coordinate system (right-hand, Y-up):
+        - VTK X = d0 (column, rightward)
+        - VTK Y = d1 (row index, but VTK displays Y-up)
+        - VTK Z = axial (fiber direction)
+
+    Args:
+        filepath: Output file path (.vtk or .vtp extension).
+        void_mask: 3D boolean array with shape (axial, d1, d0) containing void regions (True = void).
+        roi_bounds: Optional [z_min, z_max, y_min, y_max, x_min, x_max] to offset mesh origin.
+        polygon_mask: Optional 3D boolean mask to apply to void_mask before export.
+
+    Returns:
+        dict: Statistics about the exported mesh (n_vertices, n_faces, volume, surface_area).
+    """
+    import pyvista as pv
+    from skimage import measure
+
+    logger.info(f"Exporting void surface to VTK: {filepath}")
+    logger.debug(f"Void mask shape: {void_mask.shape}")
+
+    # Apply polygon mask if provided
+    if polygon_mask is not None:
+        void_mask = void_mask & polygon_mask
+        logger.debug("Applied polygon mask to void mask")
+
+    # Check if there are any voids
+    if not np.any(void_mask):
+        logger.warning("No void regions found in mask")
+        return {'n_vertices': 0, 'n_faces': 0, 'volume': 0, 'surface_area': 0}
+
+    # Convert boolean mask to float for marching cubes
+    # Pad with zeros to ensure closed surface at boundaries
+    void_padded = np.pad(void_mask.astype(np.float32), pad_width=1, mode='constant', constant_values=0)
+
+    # Run marching cubes to generate surface mesh
+    # Input shape is (axial, d1, d0), marching cubes returns vertices as (z, y, x)
+    verts, faces, normals, values = measure.marching_cubes(void_padded, level=0.5)
+
+    # Adjust vertices for padding offset (-1 on each axis)
+    verts = verts - 1.0
+
+    # Convert from (z, y, x) to VTK (x, y, z) coordinate order
+    # verts[:, 0] = z (axial), verts[:, 1] = y (d1), verts[:, 2] = x (d0)
+    verts_vtk = np.column_stack([verts[:, 2], verts[:, 1], verts[:, 0]])
+
+    # Apply ROI offset if provided
+    if roi_bounds is not None:
+        z_min, z_max, y_min, y_max, x_min, x_max = roi_bounds
+        verts_vtk[:, 0] += x_min  # X offset
+        verts_vtk[:, 1] += y_min  # Y offset
+        verts_vtk[:, 2] += z_min  # Z offset
+        logger.debug(f"Applied ROI offset: x+{x_min}, y+{y_min}, z+{z_min}")
+
+    # Create PyVista PolyData mesh
+    # faces need to be converted to VTK format: [n_verts, v0, v1, v2, ...]
+    n_faces = len(faces)
+    faces_vtk = np.column_stack([np.full(n_faces, 3), faces]).flatten()
+
+    mesh = pv.PolyData(verts_vtk, faces_vtk)
+
+    # Compute mesh statistics
+    mesh_volume = mesh.volume if mesh.n_cells > 0 else 0
+    mesh_area = mesh.area if mesh.n_cells > 0 else 0
+
+    # Save mesh
+    mesh.save(filepath)
+
+    stats = {
+        'n_vertices': mesh.n_points,
+        'n_faces': mesh.n_cells,
+        'volume': mesh_volume,
+        'surface_area': mesh_area
+    }
+
+    logger.info(f"Void surface exported: {stats['n_vertices']} vertices, {stats['n_faces']} faces, "
+                f"volume={stats['volume']:.1f} voxels³, area={stats['surface_area']:.1f} voxels²")
+
+    return stats

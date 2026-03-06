@@ -421,11 +421,11 @@ class ExportVTPDialog(QDialog):
         arrays_group = QGroupBox("Scalar Arrays")
         arrays_layout = QVBoxLayout(arrays_group)
 
-        self.xz_check = QCheckBox("XZ_Orientation (X-Z plane angle)")
+        self.xz_check = QCheckBox("Tilt_d0 (d0-axial plane angle)")
         self.xz_check.setChecked(True)
         arrays_layout.addWidget(self.xz_check)
 
-        self.yz_check = QCheckBox("YZ_Orientation (Y-Z plane angle)")
+        self.yz_check = QCheckBox("Tilt_d1 (d1-axial plane angle)")
         self.yz_check.setChecked(True)
         arrays_layout.addWidget(self.yz_check)
 
@@ -439,12 +439,12 @@ class ExportVTPDialog(QDialog):
         azimuth_group = QGroupBox("Azimuth (for cyclic colormap)")
         azimuth_layout = QVBoxLayout(azimuth_group)
 
-        self.azimuth_check = QCheckBox("Azimuth (0° to 360°, cyclic)")
+        self.azimuth_check = QCheckBox("Azimuth (-180° to 180°, cyclic)")
         self.azimuth_check.setChecked(True)
         self.azimuth_check.setToolTip(
-            "True azimuth angle in 0°-360° range.\n"
+            "True azimuth angle in -180° to 180° range.\n"
             "Use with HSV or cyclic colormap in Paraview.\n"
-            "0°/360° = same direction (cyclic)"
+            "-180°/180° = same direction (cyclic)"
         )
         azimuth_layout.addWidget(self.azimuth_check)
 
@@ -453,10 +453,10 @@ class ExportVTPDialog(QDialog):
         self.azimuth_norm_check.setToolTip(
             "Azimuth normalized to 0-1 range.\n"
             "Use directly as Hue in HSV colormap:\n"
-            "  0° → 0.0 (Red)\n"
-            "  120° → 0.33 (Green)\n"
-            "  240° → 0.67 (Blue)\n"
-            "  360° → 1.0 (Red, cyclic)"
+            "  -180° → 0.0 (Red)\n"
+            "  -60° → 0.33 (Green)\n"
+            "  60° → 0.67 (Blue)\n"
+            "  180° → 1.0 (Red, cyclic)"
         )
         azimuth_layout.addWidget(self.azimuth_norm_check)
 
@@ -470,8 +470,8 @@ class ExportVTPDialog(QDialog):
         self.rgb_check.setChecked(True)
         self.rgb_check.setToolTip(
             "Pre-computed RGB color from HSV:\n"
-            "  H = Azimuth (0°-360° → color wheel)\n"
-            "  S = Tilt angle (Z-axis deviation)\n"
+            "  H = Azimuth (-180° to 180° → color wheel)\n"
+            "  S = Tilt angle (axial deviation)\n"
             "  V = 1.0 (full brightness)\n\n"
             "Use directly in Paraview without colormap setup."
         )
@@ -479,12 +479,28 @@ class ExportVTPDialog(QDialog):
 
         layout.addWidget(rgb_group)
 
+        # Phase wheel legend option
+        legend_group = QGroupBox("Color Legend")
+        legend_layout = QVBoxLayout(legend_group)
+
+        self.phase_wheel_check = QCheckBox("Export Phase Wheel (SVG)")
+        self.phase_wheel_check.setChecked(True)
+        self.phase_wheel_check.setToolTip(
+            "Export a color legend showing:\n"
+            "  - Azimuth angle (hue/color)\n"
+            "  - Tilt angle (saturation)\n\n"
+            "Saved as SVG next to VTP file."
+        )
+        legend_layout.addWidget(self.phase_wheel_check)
+
+        layout.addWidget(legend_group)
+
         # Usage info
         info_group = QGroupBox("Usage in Paraview")
         info_layout = QVBoxLayout(info_group)
         info_label = QLabel(
             "For pre-rendered RGB color:\n"
-            "1. Open VTP → Apply 'Tube' filter\n"
+            "1. Open VTP -> Apply 'Tube' filter\n"
             "2. Color by 'Azimuth_RGB'\n"
             "3. Turn off 'Map Scalars'\n\n"
             "HSV mapping:\n"
@@ -517,7 +533,8 @@ class ExportVTPDialog(QDialog):
             'export_azimuth': self.azimuth_check.isChecked(),
             'export_azimuth_norm': self.azimuth_norm_check.isChecked(),
             'export_fiber_id': self.fiber_id_check.isChecked(),
-            'export_rgb': self.rgb_check.isChecked()
+            'export_rgb': self.rgb_check.isChecked(),
+            'export_phase_wheel': self.phase_wheel_check.isChecked()
         }
 
 
@@ -526,8 +543,8 @@ class RibbonButton(QPushButton):
         super().__init__()
         from vmm.theme import get_ribbon_button_style
         self.setText(text)
-        self.setMinimumSize(55, 45)
-        self.setMaximumSize(80, 45)
+        self.setMinimumSize(58, 48)
+        self.setMaximumSize(90, 48)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.setStyleSheet(get_ribbon_button_style())
 
@@ -537,6 +554,50 @@ class RibbonComboBox(QComboBox):
         from vmm.theme import get_ribbon_combobox_style
         self.setMinimumWidth(120)
         self.setStyleSheet(get_ribbon_combobox_style())
+
+
+class ScrollableRibbon(QScrollArea):
+    """A scrollable container for ribbon toolbars."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFrameShape(QFrame.NoFrame)
+        # Style the scrollbar
+        self.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: transparent;
+                border: none;
+            }}
+            QScrollBar:horizontal {{
+                height: 8px;
+                background: {COLORS['bg_secondary']};
+                border-radius: 4px;
+                margin: 0px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: {COLORS['border']};
+                border-radius: 4px;
+                min-width: 30px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: {COLORS['accent']};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
+        self.setFixedHeight(90)
+
+    def setRibbonWidget(self, widget):
+        """Set the ribbon content widget."""
+        self.setWidget(widget)
+
 
 class HistogramPanel(QWidget):
     def __init__(self):
@@ -598,8 +659,8 @@ class HistogramPanel(QWidget):
         # Determine number of subplots needed
         plots_needed = sum([
             config['orientations']['reference'],
-            config['orientations']['theta'],
-            config['orientations']['phi']
+            config['orientations']['tilt_d0'],
+            config['orientations']['tilt_d1']
         ])
 
         if plots_needed == 0:
@@ -674,9 +735,9 @@ class HistogramPanel(QWidget):
                 stats_text += "\n"
                 plot_idx += 1
 
-        # Plot theta orientation
-        if config['orientations']['theta']:
-            data = orientation_data.get('theta')
+        # Plot tilt_d0 orientation (d0-axial plane)
+        if config['orientations']['tilt_d0']:
+            data = orientation_data.get('tilt_d0')
             if data is not None:
                 ax = axes[plot_idx]
                 data_flat = data.flatten()
@@ -693,7 +754,7 @@ class HistogramPanel(QWidget):
                                           alpha=0.7, edgecolor='black',
                                           density=use_density)
 
-                ax.set_title('X-Z Orientation', fontsize=12)
+                ax.set_title('Tilt d0 (d0-axial plane)', fontsize=12)
                 ax.set_xlabel('Angle (degrees)', fontsize=10)
                 ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
                 ax.grid(True, alpha=0.3)
@@ -704,18 +765,18 @@ class HistogramPanel(QWidget):
                 cv_val = (std_val / mean_val * 100) if mean_val != 0 else 0
 
                 # Store data for export
-                self.histogram_data['X-Z'] = {
+                self.histogram_data['Tilt_d0'] = {
                     'data': data_flat,
                     'bins': bins,
                     'counts': n
                 }
-                self.statistics_data['X-Z'] = {
+                self.statistics_data['Tilt_d0'] = {
                     'mean': mean_val,
                     'std': std_val,
                     'cv': cv_val
                 }
 
-                stats_text += "X-Z Orientation:\n"
+                stats_text += "Tilt d0 (d0-axial plane):\n"
                 if config['statistics']['mean']:
                     ax.axvline(mean_val, color='red', linestyle='--', linewidth=1, label=f'Mean: {mean_val:.2f}°')
                     stats_text += f"  Mean: {mean_val:.2f}°\n"
@@ -730,9 +791,9 @@ class HistogramPanel(QWidget):
                 stats_text += "\n"
                 plot_idx += 1
 
-        # Plot phi orientation
-        if config['orientations']['phi']:
-            data = orientation_data.get('phi')
+        # Plot tilt_d1 orientation (d1-axial plane)
+        if config['orientations']['tilt_d1']:
+            data = orientation_data.get('tilt_d1')
             if data is not None:
                 ax = axes[plot_idx]
                 data_flat = data.flatten()
@@ -749,7 +810,7 @@ class HistogramPanel(QWidget):
                                           alpha=0.7, edgecolor='black',
                                           density=use_density)
 
-                ax.set_title('Y-Z Orientation', fontsize=12)
+                ax.set_title('Tilt d1 (d1-axial plane)', fontsize=12)
                 ax.set_xlabel('Angle (degrees)', fontsize=10)
                 ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
                 ax.grid(True, alpha=0.3)
@@ -760,18 +821,18 @@ class HistogramPanel(QWidget):
                 cv_val = (std_val / mean_val * 100) if mean_val != 0 else 0
 
                 # Store data for export
-                self.histogram_data['Y-Z'] = {
+                self.histogram_data['Tilt_d1'] = {
                     'data': data_flat,
                     'bins': bins,
                     'counts': n
                 }
-                self.statistics_data['Y-Z'] = {
+                self.statistics_data['Tilt_d1'] = {
                     'mean': mean_val,
                     'std': std_val,
                     'cv': cv_val
                 }
 
-                stats_text += "Y-Z Orientation:\n"
+                stats_text += "Tilt d1 (d1-axial plane):\n"
                 if config['statistics']['mean']:
                     ax.axvline(mean_val, color='red', linestyle='--', linewidth=1, label=f'Mean: {mean_val:.2f}°')
                     stats_text += f"  Mean: {mean_val:.2f}°\n"
@@ -813,8 +874,8 @@ class HistogramPanel(QWidget):
         # Count total number of plots needed (one subplot per orientation type)
         num_orientations = sum([
             config['orientations']['reference'],
-            config['orientations']['theta'],
-            config['orientations']['phi']
+            config['orientations']['tilt_d0'],
+            config['orientations']['tilt_d1']
         ])
 
         if num_orientations == 0:
@@ -835,12 +896,12 @@ class HistogramPanel(QWidget):
         if config['orientations']['reference']:
             orientation_types.append('angle')
             orientation_labels.append('Reference Orientation')
-        if config['orientations']['theta']:
-            orientation_types.append('theta')
-            orientation_labels.append('X-Z Orientation')
-        if config['orientations']['phi']:
-            orientation_types.append('phi')
-            orientation_labels.append('Y-Z Orientation')
+        if config['orientations']['tilt_d0']:
+            orientation_types.append('tilt_d0')
+            orientation_labels.append('Tilt d0')
+        if config['orientations']['tilt_d1']:
+            orientation_types.append('tilt_d1')
+            orientation_labels.append('Tilt d1')
 
         # Statistics text
         stats_text = "Statistical Analysis:\n" + "="*60 + "\n\n"
@@ -979,7 +1040,7 @@ class HistogramPanel(QWidget):
         plot_idx = 0
         stats_text = "Fiber Trajectory Statistical Analysis:\n" + "="*40 + "\n\n"
 
-        # Plot X-Z orientation histogram (formerly tilt)
+        # Plot Tilt d0 histogram (d0-axial plane angle)
         if config['angles'].get('tilt', False) and angle_data.get('tilt') is not None:
             data = angle_data['tilt']
             if len(data) > 0:
@@ -1000,7 +1061,7 @@ class HistogramPanel(QWidget):
                                               range=hist_range, color='green',
                                               alpha=0.7, edgecolor='black')
 
-                    ax.set_title('X-Z Orientation', fontsize=12)
+                    ax.set_title('Tilt d0', fontsize=12)
                     ax.set_xlabel('Angle (degrees)', fontsize=10)
                     ax.set_ylabel('Frequency', fontsize=10)
                     ax.grid(True, alpha=0.3)
@@ -1011,18 +1072,18 @@ class HistogramPanel(QWidget):
                     cv_val = (std_val / mean_val * 100) if mean_val != 0 else 0
 
                     # Store data for export
-                    self.histogram_data['X-Z'] = {
+                    self.histogram_data['Tilt_d0'] = {
                         'data': data_flat,
                         'bins': bins,
                         'counts': n
                     }
-                    self.statistics_data['X-Z'] = {
+                    self.statistics_data['Tilt_d0'] = {
                         'mean': mean_val,
                         'std': std_val,
                         'cv': cv_val
                     }
 
-                    stats_text += "X-Z Orientation:\n"
+                    stats_text += "Tilt d0:\n"
                     stats_text += f"  N: {len(data_flat)}\n"
                     if config['statistics']['mean']:
                         ax.axvline(mean_val, color='red', linestyle='--', linewidth=1.5, label=f'Mean: {mean_val:.2f}°')
@@ -1039,7 +1100,7 @@ class HistogramPanel(QWidget):
                     stats_text += "\n"
                     plot_idx += 1
 
-        # Plot Y-Z orientation histogram (formerly azimuth)
+        # Plot Tilt d1 histogram (d1-axial plane angle)
         if config['angles'].get('azimuth', False) and angle_data.get('azimuth') is not None:
             data = angle_data['azimuth']
             if len(data) > 0:
@@ -1053,14 +1114,14 @@ class HistogramPanel(QWidget):
                     if config['auto_range']:
                         hist_range = (np.min(data_flat), np.max(data_flat))
                     else:
-                        hist_range = (-90, 90)  # Y-Z orientation range
+                        hist_range = (-90, 90)  # Tilt d1 range
 
                     # Plot histogram
                     n, bins, patches = ax.hist(data_flat, bins=config['bins'],
                                               range=hist_range, color='orange',
                                               alpha=0.7, edgecolor='black')
 
-                    ax.set_title('Y-Z Orientation', fontsize=12)
+                    ax.set_title('Tilt d1', fontsize=12)
                     ax.set_xlabel('Angle (degrees)', fontsize=10)
                     ax.set_ylabel('Frequency', fontsize=10)
                     ax.grid(True, alpha=0.3)
@@ -1071,18 +1132,18 @@ class HistogramPanel(QWidget):
                     cv_val = (std_val / abs(mean_val) * 100) if mean_val != 0 else 0
 
                     # Store data for export
-                    self.histogram_data['Y-Z'] = {
+                    self.histogram_data['Tilt_d1'] = {
                         'data': data_flat,
                         'bins': bins,
                         'counts': n
                     }
-                    self.statistics_data['Y-Z'] = {
+                    self.statistics_data['Tilt_d1'] = {
                         'mean': mean_val,
                         'std': std_val,
                         'cv': cv_val
                     }
 
-                    stats_text += "Y-Z Orientation:\n"
+                    stats_text += "Tilt d1:\n"
                     stats_text += f"  N: {len(data_flat)}\n"
                     if config['statistics']['mean']:
                         ax.axvline(mean_val, color='red', linestyle='--', linewidth=1.5, label=f'Mean: {mean_val:.2f}°')
@@ -1175,12 +1236,18 @@ class HistogramPanel(QWidget):
                     ])
                 writer.writerow([])
 
+                # Detect if density mode was used
+                use_density = False
+                if hasattr(self, 'current_config'):
+                    use_density = self.current_config.get('use_density', False)
+
                 # Write histogram data for each orientation
                 for orientation_name in self.histogram_data:
                     hist_data = self.histogram_data[orientation_name]
 
                     writer.writerow([f'{orientation_name} Orientation Histogram:'])
-                    writer.writerow(['Bin Center (degrees)', 'Count'])
+                    value_label = 'Density' if use_density else 'Count'
+                    writer.writerow(['Bin Center (degrees)', value_label])
 
                     # Calculate bin centers
                     bins = hist_data['bins']
@@ -1188,7 +1255,10 @@ class HistogramPanel(QWidget):
                     bin_centers = (bins[:-1] + bins[1:]) / 2
 
                     for center, count in zip(bin_centers, counts):
-                        writer.writerow([f"{center:.2f}", int(count)])
+                        if use_density:
+                            writer.writerow([f"{center:.2f}", f"{count:.6f}"])
+                        else:
+                            writer.writerow([f"{center:.2f}", int(count)])
                     writer.writerow([])
 
                     # Write raw data summary
@@ -1281,7 +1351,8 @@ class ModellingHistogramPanel(QWidget):
         plots_needed = sum([
             config['angles'].get('tilt', False) and angle_data.get('tilt') is not None,
             config['angles'].get('azimuth', False) and angle_data.get('azimuth') is not None,
-            config['angles'].get('true_azimuth', False) and angle_data.get('true_azimuth') is not None
+            config['angles'].get('true_azimuth', False) and angle_data.get('true_azimuth') is not None,
+            config['angles'].get('geometric', False) and angle_data.get('geometric') is not None
         ])
 
         if plots_needed == 0:
@@ -1297,6 +1368,8 @@ class ModellingHistogramPanel(QWidget):
         # Plot counter
         plot_idx = 0
         stats_text = "Statistical Analysis:\n" + "="*30 + "\n\n"
+
+        use_density = config.get('use_density', False)
 
         # Helper function to plot a histogram
         def plot_angle_histogram(data, title, color, key):
@@ -1317,11 +1390,12 @@ class ModellingHistogramPanel(QWidget):
 
             n, bins, patches = ax.hist(data_flat, bins=config['bins'],
                                       range=hist_range, color=color,
-                                      alpha=0.7, edgecolor='black')
+                                      alpha=0.7, edgecolor='black',
+                                      density=use_density)
 
             ax.set_title(title, fontsize=10)
             ax.set_xlabel('Angle (°)', fontsize=9)
-            ax.set_ylabel('Freq', fontsize=9)
+            ax.set_ylabel('Density' if use_density else 'Freq', fontsize=9)
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=8)
 
@@ -1356,17 +1430,21 @@ class ModellingHistogramPanel(QWidget):
             stats_text += "\n"
             plot_idx += 1
 
-        # Plot X-Z orientation histogram (formerly tilt)
+        # Plot Tilt d0 histogram (d0-axial plane angle)
         if config['angles'].get('tilt', False) and angle_data.get('tilt') is not None:
-            plot_angle_histogram(angle_data['tilt'], 'X-Z Orientation', 'green', 'X-Z')
+            plot_angle_histogram(angle_data['tilt'], 'Tilt d0', 'green', 'Tilt_d0')
 
-        # Plot Y-Z orientation histogram (formerly azimuth)
+        # Plot Tilt d1 histogram (d1-axial plane angle)
         if config['angles'].get('azimuth', False) and angle_data.get('azimuth') is not None:
-            plot_angle_histogram(angle_data['azimuth'], 'Y-Z Orientation', 'orange', 'Y-Z')
+            plot_angle_histogram(angle_data['azimuth'], 'Tilt d1', 'orange', 'Tilt_d1')
 
         # Plot True Azimuth histogram
         if config['angles'].get('true_azimuth', False) and angle_data.get('true_azimuth') is not None:
             plot_angle_histogram(angle_data['true_azimuth'], 'Azimuth', 'purple', 'Azimuth')
+
+        # Plot Geometric misalignment histogram
+        if config['angles'].get('geometric', False) and angle_data.get('geometric') is not None:
+            plot_angle_histogram(angle_data['geometric'], 'Misalignment (geometric)', 'steelblue', 'Geometric')
 
         self.stats_text.setText(stats_text)
         self.figure.tight_layout()
@@ -1439,12 +1517,18 @@ class ModellingHistogramPanel(QWidget):
                     ])
                 writer.writerow([])
 
+                # Detect if density mode was used
+                use_density = False
+                if hasattr(self, 'current_config'):
+                    use_density = self.current_config.get('use_density', False)
+
                 # Write histogram data for each orientation
                 for orientation_name in self.histogram_data:
                     hist_data = self.histogram_data[orientation_name]
 
                     writer.writerow([f'{orientation_name} Orientation Histogram:'])
-                    writer.writerow(['Bin Center (degrees)', 'Count'])
+                    value_label = 'Density' if use_density else 'Count'
+                    writer.writerow(['Bin Center (degrees)', value_label])
 
                     # Calculate bin centers
                     bins = hist_data['bins']
@@ -1452,7 +1536,10 @@ class ModellingHistogramPanel(QWidget):
                     bin_centers = (bins[:-1] + bins[1:]) / 2
 
                     for center, count in zip(bin_centers, counts):
-                        writer.writerow([f"{center:.2f}", int(count)])
+                        if use_density:
+                            writer.writerow([f"{center:.2f}", f"{count:.6f}"])
+                        else:
+                            writer.writerow([f"{center:.2f}", int(count)])
                     writer.writerow([])
 
                     # Write raw data summary
@@ -1522,22 +1609,7 @@ class Viewer2D(QWidget):
         # Colors for ROIs
         self.roi_colors = ['red', 'blue', 'green', 'yellow', 'cyan', 'magenta', 'orange', 'purple']
 
-        # Zoom/Pan state
-        self.zoom_enabled = False
-        self.zoom_factor_xy = 1.0
-        self.zoom_factor_xz = 1.0
-        self.zoom_factor_yz = 1.0
-        self.pan_offset_xy = [0, 0]  # [x_offset, y_offset]
-        self.pan_offset_xz = [0, 0]
-        self.pan_offset_yz = [0, 0]
-        # Store original view limits for reset
-        self.original_xlim_xy = None
-        self.original_ylim_xy = None
-        self.original_xlim_xz = None
-        self.original_ylim_xz = None
-        self.original_xlim_yz = None
-        self.original_ylim_yz = None
-        # Pan state
+        # Pan state (for future use)
         self.pan_active = False
         self.pan_start = None
         self.pan_view = None
@@ -1555,6 +1627,7 @@ class Viewer2D(QWidget):
         # Void visualization
         self.void_mask = None
         self.void_roi_bounds = None
+        self.void_polygon_mask = None  # Polygon mask for void overlay
         self.show_void_overlay = False
 
         # Image adjustment
@@ -1581,17 +1654,16 @@ class Viewer2D(QWidget):
         self.canvas_xy.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.canvas_xy.setMinimumSize(100, 100)
         self.ax_xy = self.figure_xy.add_subplot(111)
-        self.ax_xy.set_title('XY Plane (Z slice)', fontsize=10, fontweight='bold')
+        self.ax_xy.set_title('d0-d1 Plane (axial slice)', fontsize=10, fontweight='bold')
         self.ax_xy.set_aspect('equal')
-        self.ax_xy.axis('off')
-        # Draw axis arrows even before image is loaded
-        self._drawAxisArrows(self.ax_xy, 'xy', None)
+        self.ax_xy.set_xlabel('d0')
+        self.ax_xy.set_ylabel('d1')
         self.canvas_xy.draw()
         viewers_splitter.addWidget(self.canvas_xy)
-        # Connect mouse wheel event for Z slice control
+        # Connect mouse wheel event for axial slice control
         self.canvas_xy.mpl_connect('scroll_event', self.onScrollXY)
 
-        # XZ view (center)
+        # XZ view (center) - d0-axial plane
         self.figure_xz = Figure(figsize=(3, 3), facecolor=COLORS['bg_primary'])
         # Add extra space on left and bottom for axis arrows
         self.figure_xz.subplots_adjust(left=0.25, right=0.95, bottom=0.15, top=0.95)
@@ -1599,17 +1671,16 @@ class Viewer2D(QWidget):
         self.canvas_xz.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.canvas_xz.setMinimumSize(100, 100)
         self.ax_xz = self.figure_xz.add_subplot(111)
-        self.ax_xz.set_title('XZ Plane (Y slice)', fontsize=10, fontweight='bold')
+        self.ax_xz.set_title('d0-axial Plane (d1 slice)', fontsize=10, fontweight='bold')
         self.ax_xz.set_aspect('equal')
-        self.ax_xz.axis('off')
-        # Draw axis arrows even before image is loaded
-        self._drawAxisArrows(self.ax_xz, 'xz', None)
+        self.ax_xz.set_xlabel('d0')
+        self.ax_xz.set_ylabel('axial')
         self.canvas_xz.draw()
         viewers_splitter.addWidget(self.canvas_xz)
-        # Connect mouse wheel event for Y slice control
+        # Connect mouse wheel event for d1 slice control
         self.canvas_xz.mpl_connect('scroll_event', self.onScrollXZ)
 
-        # YZ view (right)
+        # YZ view (right) - d1-axial plane
         self.figure_yz = Figure(figsize=(3, 3), facecolor=COLORS['bg_primary'])
         # Add extra space on left and bottom for axis arrows
         self.figure_yz.subplots_adjust(left=0.25, right=0.95, bottom=0.15, top=0.95)
@@ -1617,14 +1688,13 @@ class Viewer2D(QWidget):
         self.canvas_yz.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.canvas_yz.setMinimumSize(100, 100)
         self.ax_yz = self.figure_yz.add_subplot(111)
-        self.ax_yz.set_title('YZ Plane (X slice)', fontsize=10, fontweight='bold')
+        self.ax_yz.set_title('d1-axial Plane (d0 slice)', fontsize=10, fontweight='bold')
         self.ax_yz.set_aspect('equal')
-        self.ax_yz.axis('off')
-        # Draw axis arrows even before image is loaded
-        self._drawAxisArrows(self.ax_yz, 'yz', None)
+        self.ax_yz.set_xlabel('d1')
+        self.ax_yz.set_ylabel('axial')
         self.canvas_yz.draw()
         viewers_splitter.addWidget(self.canvas_yz)
-        # Connect mouse wheel event for X slice control
+        # Connect mouse wheel event for d0 slice control
         self.canvas_yz.mpl_connect('scroll_event', self.onScrollYZ)
 
         main_splitter.addWidget(viewers_splitter)
@@ -1752,7 +1822,7 @@ class Viewer2D(QWidget):
         roi_check = QCheckBox(roi_label)
         roi_check.setChecked(False)  # Default unchecked
 
-        # Create container for child toggles (X-Z, Y-Z, Reference) - radio buttons for single selection
+        # Create container for child toggles (Tilt d0, Tilt d1, Reference) - radio buttons for single selection
         children_widget = QWidget()
         children_layout = QVBoxLayout(children_widget)
         children_layout.setContentsMargins(20, 0, 0, 0)  # Indent
@@ -1761,17 +1831,17 @@ class Viewer2D(QWidget):
         # Create button group for exclusive selection
         orientation_type_group = QButtonGroup(children_widget)
 
-        # Create radio buttons for theta, phi, angle (only one can be selected)
-        theta_radio = QRadioButton("X-Z")
-        theta_radio.setChecked(True)  # Default selection
-        theta_radio.toggled.connect(self.updateHistogramDisplay)
-        orientation_type_group.addButton(theta_radio)
-        children_layout.addWidget(theta_radio)
+        # Create radio buttons for tilt_d0, tilt_d1, angle (only one can be selected)
+        tilt_d0_radio = QRadioButton("Tilt d0")
+        tilt_d0_radio.setChecked(True)  # Default selection
+        tilt_d0_radio.toggled.connect(self.updateHistogramDisplay)
+        orientation_type_group.addButton(tilt_d0_radio)
+        children_layout.addWidget(tilt_d0_radio)
 
-        phi_radio = QRadioButton("Y-Z")
-        phi_radio.toggled.connect(self.updateHistogramDisplay)
-        orientation_type_group.addButton(phi_radio)
-        children_layout.addWidget(phi_radio)
+        tilt_d1_radio = QRadioButton("Tilt d1")
+        tilt_d1_radio.toggled.connect(self.updateHistogramDisplay)
+        orientation_type_group.addButton(tilt_d1_radio)
+        children_layout.addWidget(tilt_d1_radio)
 
         angle_radio = QRadioButton("Reference")
         angle_radio.toggled.connect(self.updateHistogramDisplay)
@@ -1793,8 +1863,8 @@ class Viewer2D(QWidget):
             'check': roi_check,
             'children_widget': children_widget,
             'button_group': orientation_type_group,
-            'theta_radio': theta_radio,
-            'phi_radio': phi_radio,
+            'tilt_d0_radio': tilt_d0_radio,
+            'tilt_d1_radio': tilt_d1_radio,
             'angle_radio': angle_radio
         }
 
@@ -1805,18 +1875,23 @@ class Viewer2D(QWidget):
         roi_check.setVisible(True)
 
     def onScrollXY(self, event):
-        """Handle mouse wheel scroll on XY view to change Z slice or zoom"""
+        """Handle mouse wheel scroll on d0-d1 view to change axial slice or zoom (Ctrl+scroll)"""
         if self.current_volume is None:
             return
 
-        if self.zoom_enabled:
-            # Zoom mode - adjust zoom level
-            zoom_speed = 1.1
+        # Check if Ctrl key is pressed for zoom (use Qt modifiers from guiEvent)
+        ctrl_pressed = False
+        if event.guiEvent is not None:
+            from PySide6.QtCore import Qt
+            ctrl_pressed = bool(event.guiEvent.modifiers() & Qt.ControlModifier)
+
+        if ctrl_pressed:
+            # Zoom mode - apply fixed zoom per scroll step
+            zoom_step = 1.2
             if event.button == 'up':
-                self.zoom_factor_xy *= zoom_speed
+                self._applyZoomStep(self.ax_xy, zoom_step, event)
             elif event.button == 'down':
-                self.zoom_factor_xy /= zoom_speed
-            self._applyZoom(self.ax_xy, self.zoom_factor_xy, event)
+                self._applyZoomStep(self.ax_xy, 1.0 / zoom_step, event)
             self.canvas_xy.draw_idle()
         else:
             # Normal mode - scroll through slices
@@ -1829,18 +1904,23 @@ class Viewer2D(QWidget):
             self._updateMainWindowSliders()
 
     def onScrollXZ(self, event):
-        """Handle mouse wheel scroll on XZ view to change Y slice or zoom"""
+        """Handle mouse wheel scroll on d0-axial view to change d1 slice or zoom (Ctrl+scroll)"""
         if self.current_volume is None:
             return
 
-        if self.zoom_enabled:
-            # Zoom mode - adjust zoom level
-            zoom_speed = 1.1
+        # Check if Ctrl key is pressed for zoom (use Qt modifiers from guiEvent)
+        ctrl_pressed = False
+        if event.guiEvent is not None:
+            from PySide6.QtCore import Qt
+            ctrl_pressed = bool(event.guiEvent.modifiers() & Qt.ControlModifier)
+
+        if ctrl_pressed:
+            # Zoom mode - apply fixed zoom per scroll step
+            zoom_step = 1.2
             if event.button == 'up':
-                self.zoom_factor_xz *= zoom_speed
+                self._applyZoomStep(self.ax_xz, zoom_step, event)
             elif event.button == 'down':
-                self.zoom_factor_xz /= zoom_speed
-            self._applyZoom(self.ax_xz, self.zoom_factor_xz, event)
+                self._applyZoomStep(self.ax_xz, 1.0 / zoom_step, event)
             self.canvas_xz.draw_idle()
         else:
             # Normal mode - scroll through slices
@@ -1853,18 +1933,23 @@ class Viewer2D(QWidget):
             self._updateMainWindowSliders()
 
     def onScrollYZ(self, event):
-        """Handle mouse wheel scroll on YZ view to change X slice or zoom"""
+        """Handle mouse wheel scroll on d1-axial view to change d0 slice or zoom (Ctrl+scroll)"""
         if self.current_volume is None:
             return
 
-        if self.zoom_enabled:
-            # Zoom mode - adjust zoom level
-            zoom_speed = 1.1
+        # Check if Ctrl key is pressed for zoom (use Qt modifiers from guiEvent)
+        ctrl_pressed = False
+        if event.guiEvent is not None:
+            from PySide6.QtCore import Qt
+            ctrl_pressed = bool(event.guiEvent.modifiers() & Qt.ControlModifier)
+
+        if ctrl_pressed:
+            # Zoom mode - apply fixed zoom per scroll step
+            zoom_step = 1.2
             if event.button == 'up':
-                self.zoom_factor_yz *= zoom_speed
+                self._applyZoomStep(self.ax_yz, zoom_step, event)
             elif event.button == 'down':
-                self.zoom_factor_yz /= zoom_speed
-            self._applyZoom(self.ax_yz, self.zoom_factor_yz, event)
+                self._applyZoomStep(self.ax_yz, 1.0 / zoom_step, event)
             self.canvas_yz.draw_idle()
         else:
             # Normal mode - scroll through slices
@@ -1903,8 +1988,8 @@ class Viewer2D(QWidget):
             self.rois[roi_name] = {
                 'bounds': initial_bounds,
                 'color': color,
-                'theta': None,  # Will be filled after orientation computation
-                'phi': None,
+                'tilt_d0': None,  # Will be filled after orientation computation
+                'tilt_d1': None,
                 'angle': None
             }
 
@@ -2000,7 +2085,7 @@ class Viewer2D(QWidget):
         bounds = roi_data['bounds']
         z_min, z_max, y_min, y_max, x_min, x_max = bounds
 
-        # Get 2D mask for XY slice within the bounding box
+        # Get 2D mask for d0-d1 slice within the bounding box
         roi_height = y_max - y_min
         roi_width = x_max - x_min
         n_slices = z_max - z_min
@@ -2028,6 +2113,185 @@ class Viewer2D(QWidget):
             mask_3d = np.ones((n_slices, roi_height, roi_width), dtype=bool)
 
         return mask_3d
+
+    def saveScreenshot(self, filepath, dpi=150):
+        """Save the three slice views as a combined image.
+
+        Args:
+            filepath: Path to save the image (supports png, jpg, pdf, svg, etc.)
+            dpi: Resolution in dots per inch (default 150)
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.gridspec import GridSpec
+        from matplotlib.patches import Rectangle, Polygon
+        from matplotlib.lines import Line2D
+        import copy
+
+        # Create a new figure with 3 subplots
+        fig = plt.figure(figsize=(18, 6))
+        gs = GridSpec(1, 3, figure=fig, wspace=0.35)
+
+        # Copy content from each view
+        # XY view (d0-d1 plane)
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax1.set_title('d0-d1 Plane (axial slice)', fontsize=10, fontweight='bold')
+
+        # XZ view (d0-axial plane)
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.set_title('d0-axial Plane (d1 slice)', fontsize=10, fontweight='bold')
+
+        # YZ view (d1-axial plane)
+        ax3 = fig.add_subplot(gs[0, 2])
+        ax3.set_title('d1-axial Plane (d0 slice)', fontsize=10, fontweight='bold')
+
+        colorbar_added = False
+        overlay_img = None
+
+        # Copy images from existing axes
+        for src_ax, dst_ax in [(self.ax_xy, ax1), (self.ax_xz, ax2), (self.ax_yz, ax3)]:
+            origin = 'upper' if src_ax == self.ax_xy else 'lower'
+
+            # Copy all images
+            for img in src_ax.images:
+                extent = img.get_extent()
+                data = img.get_array()
+                cmap = img.get_cmap()
+                alpha = img.get_alpha() if img.get_alpha() is not None else 1.0
+                vmin, vmax = img.get_clim()
+                new_img = dst_ax.imshow(data, extent=extent, cmap=cmap, alpha=alpha,
+                                        vmin=vmin, vmax=vmax, origin=origin,
+                                        interpolation='nearest')
+                # Keep reference to overlay image (not grayscale) for colorbar
+                if cmap.name != 'gray' and alpha < 1.0:
+                    overlay_img = new_img
+
+            # Copy lines (crosshairs, ROI boundaries, etc.)
+            for line in src_ax.lines:
+                xdata = line.get_xdata()
+                ydata = line.get_ydata()
+                color = line.get_color()
+                linestyle = line.get_linestyle()
+                linewidth = line.get_linewidth()
+                marker = line.get_marker()
+                markersize = line.get_markersize()
+                markerfacecolor = line.get_markerfacecolor()
+                markeredgecolor = line.get_markeredgecolor()
+                markeredgewidth = line.get_markeredgewidth()
+                alpha = line.get_alpha() if line.get_alpha() is not None else 1.0
+                zorder = line.get_zorder()
+                dst_ax.plot(xdata, ydata, color=color, linestyle=linestyle,
+                           linewidth=linewidth, marker=marker, markersize=markersize,
+                           markerfacecolor=markerfacecolor, markeredgecolor=markeredgecolor,
+                           markeredgewidth=markeredgewidth, alpha=alpha, zorder=zorder)
+
+            # Copy scatter plots (fiber detection results, etc.)
+            for collection in src_ax.collections:
+                # Get scatter data
+                offsets = collection.get_offsets()
+                if len(offsets) > 0:
+                    facecolors = collection.get_facecolors()
+                    edgecolors = collection.get_edgecolors()
+                    sizes = collection.get_sizes()
+                    alpha = collection.get_alpha() if collection.get_alpha() is not None else 1.0
+                    zorder = collection.get_zorder()
+                    # Use scatter to copy
+                    if len(facecolors) > 0:
+                        dst_ax.scatter(offsets[:, 0], offsets[:, 1],
+                                      c=facecolors, s=sizes, alpha=alpha, zorder=zorder,
+                                      edgecolors=edgecolors if len(edgecolors) > 0 else 'none')
+
+            # Copy patches (rectangles, polygons for ROIs)
+            for patch in src_ax.patches:
+                # Get facecolor - ROI patches should have 'none' facecolor
+                facecolor = patch.get_facecolor()
+                # Check if facecolor is transparent (alpha = 0) or 'none'
+                if hasattr(facecolor, '__len__') and len(facecolor) == 4:
+                    if facecolor[3] == 0:  # Fully transparent
+                        facecolor = 'none'
+                if isinstance(patch, Rectangle):
+                    new_patch = Rectangle(
+                        (patch.get_x(), patch.get_y()),
+                        patch.get_width(), patch.get_height(),
+                        linewidth=patch.get_linewidth(),
+                        edgecolor=patch.get_edgecolor(),
+                        facecolor=facecolor,
+                        linestyle=patch.get_linestyle(),
+                        alpha=patch.get_alpha() if patch.get_alpha() is not None else 1.0,
+                        zorder=patch.get_zorder(),
+                        fill=patch.get_fill()
+                    )
+                    dst_ax.add_patch(new_patch)
+                elif isinstance(patch, Polygon):
+                    new_patch = Polygon(
+                        patch.get_xy(),
+                        closed=True,
+                        linewidth=patch.get_linewidth(),
+                        edgecolor=patch.get_edgecolor(),
+                        facecolor=facecolor,
+                        linestyle=patch.get_linestyle(),
+                        alpha=patch.get_alpha() if patch.get_alpha() is not None else 1.0,
+                        zorder=patch.get_zorder(),
+                        fill=patch.get_fill()
+                    )
+                    dst_ax.add_patch(new_patch)
+
+            # Copy text annotations (ROI labels, etc.)
+            for text in src_ax.texts:
+                # Check if text uses data coordinates or axes coordinates
+                transform = text.get_transform()
+                if transform == src_ax.transData:
+                    # Text in data coordinates - copy directly
+                    dst_ax.text(text.get_position()[0], text.get_position()[1],
+                               text.get_text(),
+                               fontsize=text.get_fontsize(),
+                               color=text.get_color(),
+                               ha=text.get_ha(), va=text.get_va(),
+                               transform=dst_ax.transData,
+                               zorder=text.get_zorder())
+                elif transform == src_ax.transAxes:
+                    # Text in axes coordinates - copy with transAxes
+                    dst_ax.text(text.get_position()[0], text.get_position()[1],
+                               text.get_text(),
+                               fontsize=text.get_fontsize(),
+                               color=text.get_color(),
+                               ha=text.get_ha(), va=text.get_va(),
+                               transform=dst_ax.transAxes,
+                               zorder=text.get_zorder())
+                else:
+                    # For other transforms, try to get position in data coords
+                    try:
+                        # Get position in display coords, then convert to data coords
+                        pos = text.get_position()
+                        dst_ax.text(pos[0], pos[1],
+                                   text.get_text(),
+                                   fontsize=text.get_fontsize(),
+                                   color=text.get_color(),
+                                   ha=text.get_ha(), va=text.get_va(),
+                                   transform=dst_ax.transData,
+                                   zorder=text.get_zorder())
+                    except Exception:
+                        pass  # Skip if unable to copy
+
+            # Copy axis limits and labels
+            dst_ax.set_xlim(src_ax.get_xlim())
+            dst_ax.set_ylim(src_ax.get_ylim())
+            dst_ax.set_xlabel(src_ax.get_xlabel())
+            dst_ax.set_ylabel(src_ax.get_ylabel())
+            dst_ax.set_aspect('equal')
+
+        # Add colorbar if there's an overlay (Vf map, orientation, etc.)
+        if overlay_img is not None:
+            cbar = fig.colorbar(overlay_img, ax=[ax1, ax2, ax3], shrink=0.8,
+                               pad=0.02, aspect=30)
+            # Try to get label from existing colorbar
+            if self.show_vf_overlay and self.vf_map is not None:
+                cbar.set_label('Volume Fraction', fontsize=10)
+
+        fig.tight_layout()
+        fig.savefig(filepath, dpi=dpi, bbox_inches='tight', facecolor='white')
+        plt.close(fig)
+
+        return filepath
 
     def _finalizeCurrentROI(self):
         """Finalize the currently editing ROI and remove selector"""
@@ -2070,12 +2334,12 @@ class Viewer2D(QWidget):
                 useblit=True,
                 props=dict(color=color, linestyle='-', linewidth=2, alpha=0.5)
             )
-            # For polygon mode, only XY selector is used (2D polygon on current Z slice)
+            # For polygon mode, only d0-d1 selector is used (2D polygon on current axial slice)
             self.roi_selector_xz = None
             self.roi_selector_yz = None
         else:
             # Rectangle selection mode (default)
-            # XY view (Z slice) - shows X and Y bounds
+            # d0-d1 view (axial slice) - shows d0 and d1 bounds
             self.roi_selector_xy = RectangleSelector(
                 self.ax_xy,
                 self._onROISelectXY,
@@ -2088,7 +2352,7 @@ class Viewer2D(QWidget):
             )
             self.roi_selector_xy.extents = (x_min, x_max, y_min, y_max)
 
-            # XZ view (Y slice) - shows X and Z bounds
+            # d0-axial view (d1 slice) - shows d0 and axial bounds
             self.roi_selector_xz = RectangleSelector(
                 self.ax_xz,
                 self._onROISelectXZ,
@@ -2101,7 +2365,7 @@ class Viewer2D(QWidget):
             )
             self.roi_selector_xz.extents = (x_min, x_max, z_min, z_max)
 
-            # YZ view (X slice) - shows Y and Z bounds
+            # d1-axial view (d0 slice) - shows d1 and axial bounds
             self.roi_selector_yz = RectangleSelector(
                 self.ax_yz,
                 self._onROISelectYZ,
@@ -2269,10 +2533,10 @@ class Viewer2D(QWidget):
             if widgets['check'].isChecked():
                 # Check which radio button is selected
                 orientation_type = None
-                if widgets['theta_radio'].isChecked():
-                    orientation_type = 'theta'
-                elif widgets['phi_radio'].isChecked():
-                    orientation_type = 'phi'
+                if widgets['tilt_d0_radio'].isChecked():
+                    orientation_type = 'tilt_d0'
+                elif widgets['tilt_d1_radio'].isChecked():
+                    orientation_type = 'tilt_d1'
                 elif widgets['angle_radio'].isChecked():
                     orientation_type = 'angle'
 
@@ -2322,7 +2586,7 @@ class Viewer2D(QWidget):
 
                 # Fill ROI region with orientation data (centered)
                 try:
-                    # XY plane (Z slice)
+                    # d0-d1 plane (axial slice)
                     if z_offset <= self.slice_z < z_max - trim_width:
                         z_roi = self.slice_z - z_offset
                         if 0 <= z_roi < orientation_volume.shape[0]:
@@ -2335,7 +2599,7 @@ class Viewer2D(QWidget):
                             if h_use > 0 and w_use > 0:
                                 orientation_full_xy[y_offset:y_end, x_offset:x_end] = roi_slice[:h_use, :w_use]
 
-                    # XZ plane (Y slice)
+                    # d0-axial plane (d1 slice)
                     if y_offset <= self.slice_y < y_max - trim_width:
                         y_roi = self.slice_y - y_offset
                         if 0 <= y_roi < orientation_volume.shape[1]:
@@ -2348,7 +2612,7 @@ class Viewer2D(QWidget):
                             if d_use > 0 and w_use > 0:
                                 orientation_full_xz[z_offset:z_end, x_offset:x_end] = roi_slice[:d_use, :w_use]
 
-                    # YZ plane (X slice)
+                    # d1-axial plane (d0 slice)
                     if x_offset <= self.slice_x < x_max - trim_width:
                         x_roi = self.slice_x - x_offset
                         if 0 <= x_roi < orientation_volume.shape[2]:
@@ -2374,15 +2638,15 @@ class Viewer2D(QWidget):
                     data_min = np.nanmin(orientation_volume)
                     data_max = np.nanmax(orientation_volume)
 
-                # Overlay on XY view
-                self.ax_xy.imshow(orientation_full_xy, cmap=cmap, origin='lower',
+                # Overlay on XY view (no extent - use pixel coordinates)
+                self.ax_xy.imshow(orientation_full_xy, cmap=cmap, origin='upper',
                                  vmin=data_min, vmax=data_max, alpha=base_alpha, aspect='equal')
 
-                # Overlay on XZ view
+                # Overlay on XZ view (origin='lower' to match base image)
                 self.ax_xz.imshow(orientation_full_xz, cmap=cmap, origin='lower',
                                  vmin=data_min, vmax=data_max, alpha=base_alpha, aspect='equal')
 
-                # Overlay on YZ view
+                # Overlay on YZ view (origin='lower' to match base image)
                 self.ax_yz.imshow(orientation_full_yz, cmap=cmap, origin='lower',
                                  vmin=data_min, vmax=data_max, alpha=base_alpha, aspect='equal')
 
@@ -2479,16 +2743,18 @@ class Viewer2D(QWidget):
                 labels_masked = np.ma.masked_where(labels == 0, labels)
 
                 # Create extent for proper positioning
+                # Y-down coordinate: extent Y range is [y_max, y_min] (inverted)
                 roi_bounds = result.get('roi_bounds')
                 if roi_bounds:
                     z_min, z_max, y_min, y_max, x_min, x_max = roi_bounds
-                    extent = [x_min, x_min + labels.shape[1], y_min, y_min + labels.shape[0]]
+                    extent = [x_min, x_min + labels.shape[1],
+                              y_min + labels.shape[0], y_min]  # Y inverted
                 else:
                     extent = [x_offset, x_offset + labels.shape[1],
-                              y_offset, y_offset + labels.shape[0]]
+                              y_offset + labels.shape[0], y_offset]  # Y inverted
 
                 # Display watershed regions with colormap
-                self.ax_xy.imshow(labels_masked, cmap='tab20', origin='lower',
+                self.ax_xy.imshow(labels_masked, cmap='tab20', origin='upper',
                                  extent=extent, alpha=0.5, zorder=3,
                                  interpolation='nearest')
 
@@ -2513,23 +2779,26 @@ class Viewer2D(QWidget):
 
         z_min, z_max, y_min, y_max, x_min, x_max = self.vf_roi_bounds
 
-        # Get Vf slice for XY view (only if current Z slice is within ROI)
+        # Get Vf slice for d0-d1 view (only if current axial slice is within ROI)
+        # origin='upper' with extent=[left, right, bottom, top]
+        # For origin='upper', row 0 is at top, so extent Y should be [y_max, y_min] (inverted)
         if z_min <= self.slice_z < z_max:
             vf_z_idx = self.slice_z - z_min
             if 0 <= vf_z_idx < self.vf_map.shape[0]:
                 vf_slice_xy = self.vf_map[vf_z_idx, :, :]
                 # Use masked array to handle NaN values (from polygon mask)
                 vf_slice_xy_masked = np.ma.masked_invalid(vf_slice_xy)
-                extent_xy = [x_min, x_max, y_min, y_max]
-                self.ax_xy.imshow(vf_slice_xy_masked, cmap='jet', origin='lower',
+                extent_xy = [x_min, x_max, y_max, y_min]
+                self.ax_xy.imshow(vf_slice_xy_masked, cmap='jet', origin='upper',
                                  extent=extent_xy, alpha=0.5, zorder=2,
                                  vmin=0, vmax=1, interpolation='bilinear')
 
-        # XZ view (Y slice) - always show using center Y of ROI if outside bounds
+        # d0-axial view (d1 slice) - always show using center d1 of ROI if outside bounds
+        # origin='lower' so axial increases upward (matching base image)
         if y_min <= self.slice_y < y_max:
             vf_y_idx = self.slice_y - y_min
         else:
-            # Use center Y slice of ROI when outside bounds
+            # Use center d1 slice of ROI when outside bounds
             vf_y_idx = (y_max - y_min) // 2
         if 0 <= vf_y_idx < self.vf_map.shape[1]:
             vf_slice_xz = self.vf_map[:, vf_y_idx, :]
@@ -2539,11 +2808,12 @@ class Viewer2D(QWidget):
                              extent=extent_xz, alpha=0.5, zorder=2,
                              vmin=0, vmax=1, interpolation='bilinear')
 
-        # YZ view (X slice) - always show using center X of ROI if outside bounds
+        # d1-axial view (d0 slice) - always show using center d0 of ROI if outside bounds
+        # origin='lower' so axial increases upward (matching base image)
         if x_min <= self.slice_x < x_max:
             vf_x_idx = self.slice_x - x_min
         else:
-            # Use center X slice of ROI when outside bounds
+            # Use center d0 slice of ROI when outside bounds
             vf_x_idx = (x_max - x_min) // 2
         if 0 <= vf_x_idx < self.vf_map.shape[2]:
             vf_slice_yz = self.vf_map[:, :, vf_x_idx]
@@ -2569,102 +2839,59 @@ class Viewer2D(QWidget):
         from matplotlib.colors import ListedColormap
         red_cmap = ListedColormap([[0, 0, 0, 0], [1, 0, 0, 1]])  # transparent and red
 
-        # XY view (Z slice) - void_mask[z, y, x]
+        # d0-d1 view (axial slice) - void_mask[axial, d1, d0]
+        # origin='upper' with extent=[left, right, bottom, top]
+        # For origin='upper', row 0 is at top, so extent Y should be [y_max, y_min] (inverted)
         if z_min <= self.slice_z < z_max:
             void_z_idx = self.slice_z - z_min
             if 0 <= void_z_idx < self.void_mask.shape[0]:
                 void_slice_xy = self.void_mask[void_z_idx, :, :].astype(np.float32)
-                # extent: [x_left, x_right, y_bottom, y_top]
-                extent_xy = [x_min, x_max, y_max, y_min]  # y_max first for correct orientation
+                # Apply polygon mask if available
+                if self.void_polygon_mask is not None and void_z_idx < len(self.void_polygon_mask):
+                    void_slice_xy = void_slice_xy * self.void_polygon_mask[void_z_idx].astype(np.float32)
+                extent_xy = [x_min, x_max, y_max, y_min]
                 self.ax_xy.imshow(void_slice_xy, cmap=red_cmap, origin='upper',
                                  extent=extent_xy, alpha=0.6, zorder=3,
                                  vmin=0, vmax=1, interpolation='nearest')
 
-        # XZ view (Y slice) - void_mask[:, y, :]
+        # d0-axial view (d1 slice) - void_mask[:, d1, :]
+        # origin='lower' so axial increases upward (matching base image)
         if y_min <= self.slice_y < y_max:
             void_y_idx = self.slice_y - y_min
             if 0 <= void_y_idx < self.void_mask.shape[1]:
                 void_slice_xz = self.void_mask[:, void_y_idx, :].astype(np.float32)
-                # extent: [x_left, x_right, z_bottom, z_top]
-                extent_xz = [x_min, x_max, z_max, z_min]  # z_max first for correct orientation
-                self.ax_xz.imshow(void_slice_xz, cmap=red_cmap, origin='upper',
+                # Apply polygon mask if available
+                if self.void_polygon_mask is not None:
+                    polygon_slice_xz = self.void_polygon_mask[:, void_y_idx, :].astype(np.float32)
+                    void_slice_xz = void_slice_xz * polygon_slice_xz
+                extent_xz = [x_min, x_max, z_min, z_max]
+                self.ax_xz.imshow(void_slice_xz, cmap=red_cmap, origin='lower',
                                  extent=extent_xz, alpha=0.6, zorder=3,
                                  vmin=0, vmax=1, interpolation='nearest')
 
-        # YZ view (X slice) - void_mask[:, :, x]
+        # d1-axial view (d0 slice) - void_mask[:, :, d0]
+        # origin='lower' so axial increases upward (matching base image)
         if x_min <= self.slice_x < x_max:
             void_x_idx = self.slice_x - x_min
             if 0 <= void_x_idx < self.void_mask.shape[2]:
                 void_slice_yz = self.void_mask[:, :, void_x_idx].astype(np.float32)
-                # extent: [y_left, y_right, z_bottom, z_top]
-                extent_yz = [y_min, y_max, z_max, z_min]  # z_max first for correct orientation
-                self.ax_yz.imshow(void_slice_yz, cmap=red_cmap, origin='upper',
+                # Apply polygon mask if available
+                if self.void_polygon_mask is not None:
+                    polygon_slice_yz = self.void_polygon_mask[:, :, void_x_idx].astype(np.float32)
+                    void_slice_yz = void_slice_yz * polygon_slice_yz
+                extent_yz = [y_min, y_max, z_min, z_max]
+                self.ax_yz.imshow(void_slice_yz, cmap=red_cmap, origin='lower',
                                  extent=extent_yz, alpha=0.6, zorder=3,
                                  vmin=0, vmax=1, interpolation='nearest')
 
-    def enableZoom(self, enabled):
-        """Enable or disable zoom mode"""
-        self.zoom_enabled = enabled
+    def _applyZoomStep(self, ax, zoom_factor, event):
+        """Apply a single zoom step centered on mouse position.
 
-        if enabled:
-            # Store original view limits for reset
-            self.original_xlim_xy = self.ax_xy.get_xlim()
-            self.original_ylim_xy = self.ax_xy.get_ylim()
-            self.original_xlim_xz = self.ax_xz.get_xlim()
-            self.original_ylim_xz = self.ax_xz.get_ylim()
-            self.original_xlim_yz = self.ax_yz.get_xlim()
-            self.original_ylim_yz = self.ax_yz.get_ylim()
-
-            # Connect mouse button events for panning
-            self.cid_press_xy = self.canvas_xy.mpl_connect('button_press_event', self.onPressXY)
-            self.cid_release_xy = self.canvas_xy.mpl_connect('button_release_event', self.onReleaseXY)
-            self.cid_motion_xy = self.canvas_xy.mpl_connect('motion_notify_event', self.onMotionXY)
-
-            self.cid_press_xz = self.canvas_xz.mpl_connect('button_press_event', self.onPressXZ)
-            self.cid_release_xz = self.canvas_xz.mpl_connect('button_release_event', self.onReleaseXZ)
-            self.cid_motion_xz = self.canvas_xz.mpl_connect('motion_notify_event', self.onMotionXZ)
-
-            self.cid_press_yz = self.canvas_yz.mpl_connect('button_press_event', self.onPressYZ)
-            self.cid_release_yz = self.canvas_yz.mpl_connect('button_release_event', self.onReleaseYZ)
-            self.cid_motion_yz = self.canvas_yz.mpl_connect('motion_notify_event', self.onMotionYZ)
-        else:
-            # Reset zoom
-            self.zoom_factor_xy = 1.0
-            self.zoom_factor_xz = 1.0
-            self.zoom_factor_yz = 1.0
-            self.pan_offset_xy = [0, 0]
-            self.pan_offset_xz = [0, 0]
-            self.pan_offset_yz = [0, 0]
-
-            # Restore original view limits if they exist
-            if self.original_xlim_xy:
-                self.ax_xy.set_xlim(self.original_xlim_xy)
-                self.ax_xy.set_ylim(self.original_ylim_xy)
-                self.ax_xz.set_xlim(self.original_xlim_xz)
-                self.ax_xz.set_ylim(self.original_ylim_xz)
-                self.ax_yz.set_xlim(self.original_xlim_yz)
-                self.ax_yz.set_ylim(self.original_ylim_yz)
-
-                self.canvas_xy.draw_idle()
-                self.canvas_xz.draw_idle()
-                self.canvas_yz.draw_idle()
-
-            # Disconnect mouse events
-            if hasattr(self, 'cid_press_xy'):
-                self.canvas_xy.mpl_disconnect(self.cid_press_xy)
-                self.canvas_xy.mpl_disconnect(self.cid_release_xy)
-                self.canvas_xy.mpl_disconnect(self.cid_motion_xy)
-
-                self.canvas_xz.mpl_disconnect(self.cid_press_xz)
-                self.canvas_xz.mpl_disconnect(self.cid_release_xz)
-                self.canvas_xz.mpl_disconnect(self.cid_motion_xz)
-
-                self.canvas_yz.mpl_disconnect(self.cid_press_yz)
-                self.canvas_yz.mpl_disconnect(self.cid_release_yz)
-                self.canvas_yz.mpl_disconnect(self.cid_motion_yz)
-
-    def _applyZoom(self, ax, zoom_factor, event):
-        """Apply zoom to axis centered on mouse position"""
+        Args:
+            ax: Matplotlib axis to zoom
+            zoom_factor: Factor to zoom by (>1 = zoom in, <1 = zoom out)
+            event: Mouse scroll event with xdata/ydata coordinates
+        """
         if event.xdata is None or event.ydata is None:
             return
 
@@ -2676,15 +2903,21 @@ class Viewer2D(QWidget):
         xdata = event.xdata
         ydata = event.ydata
 
-        # Calculate new limits centered on mouse position
-        x_range = (xlim[1] - xlim[0]) / zoom_factor
-        y_range = (ylim[1] - ylim[0]) / zoom_factor
+        # Calculate current range
+        x_range = xlim[1] - xlim[0]
+        y_range = ylim[1] - ylim[0]
 
-        # Center on mouse position
-        new_xlim = [xdata - x_range * (xdata - xlim[0]) / (xlim[1] - xlim[0]),
-                    xdata + x_range * (xlim[1] - xdata) / (xlim[1] - xlim[0])]
-        new_ylim = [ydata - y_range * (ydata - ylim[0]) / (ylim[1] - ylim[0]),
-                    ydata + y_range * (ylim[1] - ydata) / (ylim[1] - ylim[0])]
+        # Calculate new range after zoom
+        new_x_range = x_range / zoom_factor
+        new_y_range = y_range / zoom_factor
+
+        # Calculate relative position of mouse within current view
+        x_rel = (xdata - xlim[0]) / x_range
+        y_rel = (ydata - ylim[0]) / y_range
+
+        # Set new limits keeping mouse position fixed
+        new_xlim = [xdata - x_rel * new_x_range, xdata + (1 - x_rel) * new_x_range]
+        new_ylim = [ydata - y_rel * new_y_range, ydata + (1 - y_rel) * new_y_range]
 
         ax.set_xlim(new_xlim)
         ax.set_ylim(new_ylim)
@@ -2789,111 +3022,32 @@ class Viewer2D(QWidget):
         half_size = max_dim / 2
 
         ax.set_xlim(x_center - half_size, x_center + half_size)
-        ax.set_ylim(y_center - half_size, y_center + half_size)
+        # Y-axis: top to bottom (large to small) to match origin='upper'
+        ax.set_ylim(y_center + half_size, y_center - half_size)
         ax.set_aspect('equal')
 
-    def _drawAxisArrows(self, ax, plane_type, slice_shape):
-        """Draw short axis arrows OUTSIDE the image area in the margin
+    def _setSquareAspectLower(self, ax, slice_shape):
+        """Force axes to display as square for origin='lower' (Y increases upward)
 
         Args:
-            ax: Matplotlib axis to draw on
-            plane_type: 'xy', 'xz', or 'yz'
-            slice_shape: Shape of the slice (height, width) - not used
+            ax: Matplotlib axis
+            slice_shape: Shape of the slice (height, width)
         """
-        from matplotlib.patches import FancyArrow
+        if slice_shape is None or len(slice_shape) < 2:
+            return
 
-        # Define colors: X=red, Y=green, Z=blue
-        colors = {'x': COLORS['axis_x'], 'y': COLORS['axis_y'], 'z': COLORS['axis_z']}
+        height, width = slice_shape
+        max_dim = max(height, width)
 
-        # Position OUTSIDE the axes (negative coordinates = outside image area!)
-        # These coordinates are in axes fraction, where (0,0)-(1,1) is the image area
-        # Position on LEFT side to avoid histogram below
-        start_x = -0.12  # OUTSIDE - 12% left of image edge
-        start_y = 0.02   # Just inside bottom edge (to avoid histogram)
-        arrow_length = 0.08  # 8% of axes size
+        # Center the image and make the view square
+        x_center = width / 2
+        y_center = height / 2
+        half_size = max_dim / 2
 
-        # Arrow appearance
-        arrow_width = 0.01   # width of arrow shaft
-        head_width = 0.03    # width of arrow head (3x shaft)
-        head_length = 0.02   # length of arrow head
-
-        if plane_type == 'xy':
-            # XY plane: show X (horizontal, red) and Y (vertical, green)
-            # X axis arrow - horizontal, OUTSIDE image
-            arrow_x = FancyArrow(start_x, start_y, arrow_length, 0,
-                                width=arrow_width, head_width=head_width,
-                                head_length=head_length,
-                                transform=ax.transAxes, color=colors['x'],
-                                clip_on=False, zorder=1000)
-            ax.add_patch(arrow_x)
-            ax.text(start_x + arrow_length + 0.01, start_y, 'X',
-                   transform=ax.transAxes,
-                   color=colors['x'], fontsize=10, fontweight='bold',
-                   ha='left', va='center', clip_on=False)
-
-            # Y axis arrow - vertical, OUTSIDE image
-            arrow_y = FancyArrow(start_x, start_y, 0, arrow_length,
-                                width=arrow_width, head_width=head_width,
-                                head_length=head_length,
-                                transform=ax.transAxes, color=colors['y'],
-                                clip_on=False, zorder=1000)
-            ax.add_patch(arrow_y)
-            ax.text(start_x, start_y + arrow_length + 0.01, 'Y',
-                   transform=ax.transAxes,
-                   color=colors['y'], fontsize=10, fontweight='bold',
-                   ha='center', va='bottom', clip_on=False)
-
-        elif plane_type == 'xz':
-            # XZ plane: show X (horizontal, red) and Z (vertical, blue)
-            # X axis arrow - horizontal, OUTSIDE image
-            arrow_x = FancyArrow(start_x, start_y, arrow_length, 0,
-                                width=arrow_width, head_width=head_width,
-                                head_length=head_length,
-                                transform=ax.transAxes, color=colors['x'],
-                                clip_on=False, zorder=1000)
-            ax.add_patch(arrow_x)
-            ax.text(start_x + arrow_length + 0.01, start_y, 'X',
-                   transform=ax.transAxes,
-                   color=colors['x'], fontsize=10, fontweight='bold',
-                   ha='left', va='center', clip_on=False)
-
-            # Z axis arrow - vertical, OUTSIDE image
-            arrow_z = FancyArrow(start_x, start_y, 0, arrow_length,
-                                width=arrow_width, head_width=head_width,
-                                head_length=head_length,
-                                transform=ax.transAxes, color=colors['z'],
-                                clip_on=False, zorder=1000)
-            ax.add_patch(arrow_z)
-            ax.text(start_x, start_y + arrow_length + 0.01, 'Z',
-                   transform=ax.transAxes,
-                   color=colors['z'], fontsize=10, fontweight='bold',
-                   ha='center', va='bottom', clip_on=False)
-
-        elif plane_type == 'yz':
-            # YZ plane: show Y (horizontal, green) and Z (vertical, blue)
-            # Y axis arrow - horizontal, OUTSIDE image
-            arrow_y = FancyArrow(start_x, start_y, arrow_length, 0,
-                                width=arrow_width, head_width=head_width,
-                                head_length=head_length,
-                                transform=ax.transAxes, color=colors['y'],
-                                clip_on=False, zorder=1000)
-            ax.add_patch(arrow_y)
-            ax.text(start_x + arrow_length + 0.01, start_y, 'Y',
-                   transform=ax.transAxes,
-                   color=colors['y'], fontsize=10, fontweight='bold',
-                   ha='left', va='center', clip_on=False)
-
-            # Z axis arrow - vertical, OUTSIDE image
-            arrow_z = FancyArrow(start_x, start_y, 0, arrow_length,
-                                width=arrow_width, head_width=head_width,
-                                head_length=head_length,
-                                transform=ax.transAxes, color=colors['z'],
-                                clip_on=False, zorder=1000)
-            ax.add_patch(arrow_z)
-            ax.text(start_x, start_y + arrow_length + 0.01, 'Z',
-                   transform=ax.transAxes,
-                   color=colors['z'], fontsize=10, fontweight='bold',
-                   ha='center', va='bottom', clip_on=False)
+        ax.set_xlim(x_center - half_size, x_center + half_size)
+        # Y-axis: bottom to top (small to large) to match origin='lower'
+        ax.set_ylim(y_center - half_size, y_center + half_size)
+        ax.set_aspect('equal')
 
     def _updateMainWindowSliders(self):
         """Update main window sliders to match current slice positions from mouse scroll"""
@@ -2934,38 +3088,41 @@ class Viewer2D(QWidget):
         else:
             vmin, vmax = 0, 255
 
-        # Clear and render XY plane
+        # Clear and render d0-d1 plane (XY plane, axial slice)
+        # origin='upper' displays image as-is (row 0 at top)
         self.ax_xy.clear()
         slice_xy = volume[self.slice_z, :, :]
-        self.ax_xy.imshow(slice_xy, cmap=self.colormap, origin='lower',
+        h_xy, w_xy = slice_xy.shape
+        self.ax_xy.imshow(slice_xy, cmap=self.colormap, origin='upper',
                          vmin=vmin, vmax=vmax, aspect='equal')
         self._setSquareAspect(self.ax_xy, slice_xy.shape)
-        self.ax_xy.set_title(f'XY Plane (Z={self.slice_z})', fontsize=10, fontweight='bold')
-        self.ax_xy.axis('off')
-        # Draw axis arrows
-        self._drawAxisArrows(self.ax_xy, 'xy', slice_xy.shape)
+        self.ax_xy.set_title(f'd0-d1 Plane (axial={self.slice_z})', fontsize=10, fontweight='bold')
+        self.ax_xy.set_xlabel('d0')
+        self.ax_xy.set_ylabel('d1')
 
-        # Clear and render XZ plane
+        # Clear and render d0-axial plane (XZ plane, d1 slice)
+        # origin='lower' so axial increases upward (more intuitive)
         self.ax_xz.clear()
         slice_xz = volume[:, self.slice_y, :]
+        h_xz, w_xz = slice_xz.shape
         self.ax_xz.imshow(slice_xz, cmap=self.colormap, origin='lower',
                          vmin=vmin, vmax=vmax, aspect='equal')
-        self._setSquareAspect(self.ax_xz, slice_xz.shape)
-        self.ax_xz.set_title(f'XZ Plane (Y={self.slice_y})', fontsize=10, fontweight='bold')
-        self.ax_xz.axis('off')
-        # Draw axis arrows
-        self._drawAxisArrows(self.ax_xz, 'xz', slice_xz.shape)
+        self._setSquareAspectLower(self.ax_xz, slice_xz.shape)
+        self.ax_xz.set_title(f'd0-axial Plane (d1={self.slice_y})', fontsize=10, fontweight='bold')
+        self.ax_xz.set_xlabel('d0')
+        self.ax_xz.set_ylabel('axial')
 
-        # Clear and render YZ plane
+        # Clear and render d1-axial plane (YZ plane, d0 slice)
+        # origin='lower' so axial increases upward (more intuitive)
         self.ax_yz.clear()
         slice_yz = volume[:, :, self.slice_x]
+        h_yz, w_yz = slice_yz.shape
         self.ax_yz.imshow(slice_yz, cmap=self.colormap, origin='lower',
                          vmin=vmin, vmax=vmax, aspect='equal')
-        self._setSquareAspect(self.ax_yz, slice_yz.shape)
-        self.ax_yz.set_title(f'YZ Plane (X={self.slice_x})', fontsize=10, fontweight='bold')
-        self.ax_yz.axis('off')
-        # Draw axis arrows
-        self._drawAxisArrows(self.ax_yz, 'yz', slice_yz.shape)
+        self._setSquareAspectLower(self.ax_yz, slice_yz.shape)
+        self.ax_yz.set_title(f'd1-axial Plane (d0={self.slice_x})', fontsize=10, fontweight='bold')
+        self.ax_yz.set_xlabel('d1')
+        self.ax_yz.set_ylabel('axial')
 
         # Render orientation overlays if active
         self._renderOrientationOverlay()
@@ -3046,18 +3203,19 @@ class Viewer2D(QWidget):
             else:
                 vmin, vmax = 0, 255
 
-            # Render XY plane (Z slice)
+            # Render d0-d1 plane (XY plane, axial slice)
+            # origin='upper' displays image as-is (row 0 at top)
             slice_xy = volume[self.slice_z, :, :]
+            h_xy, w_xy = slice_xy.shape
             # Apply image adjustments if any
             if not self.adjuster.settings.is_default():
                 slice_xy = self.adjuster.apply_to_slice(slice_xy)
-            im_xy = self.ax_xy.imshow(slice_xy, cmap=self.colormap, origin='lower',
+            im_xy = self.ax_xy.imshow(slice_xy, cmap=self.colormap, origin='upper',
                                        vmin=vmin, vmax=vmax, aspect='equal')
             self._setSquareAspect(self.ax_xy, slice_xy.shape)
-            self.ax_xy.set_title(f'XY Plane (Z={self.slice_z})', fontsize=10, fontweight='bold')
-            self.ax_xy.axis('off')
-            # Draw axis arrows
-            self._drawAxisArrows(self.ax_xy, 'xy', slice_xy.shape)
+            self.ax_xy.set_title(f'd0-d1 Plane (axial={self.slice_z})', fontsize=10, fontweight='bold')
+            self.ax_xy.set_xlabel('d0')
+            self.ax_xy.set_ylabel('d1')
 
             # Render fiber detection results if available
             self._renderFiberDetection()
@@ -3067,32 +3225,34 @@ class Viewer2D(QWidget):
 
             self.figure_xy.tight_layout()
 
-            # Render XZ plane (Y slice)
+            # Render d0-axial plane (XZ plane, d1 slice)
+            # origin='lower' so axial increases upward (more intuitive)
             slice_xz = volume[:, self.slice_y, :]
+            h_xz, w_xz = slice_xz.shape
             # Apply image adjustments if any
             if not self.adjuster.settings.is_default():
                 slice_xz = self.adjuster.apply_to_slice(slice_xz)
             im_xz = self.ax_xz.imshow(slice_xz, cmap=self.colormap, origin='lower',
                                        vmin=vmin, vmax=vmax, aspect='equal')
-            self._setSquareAspect(self.ax_xz, slice_xz.shape)
-            self.ax_xz.set_title(f'XZ Plane (Y={self.slice_y})', fontsize=10, fontweight='bold')
-            self.ax_xz.axis('off')
-            # Draw axis arrows
-            self._drawAxisArrows(self.ax_xz, 'xz', slice_xz.shape)
+            self._setSquareAspectLower(self.ax_xz, slice_xz.shape)
+            self.ax_xz.set_title(f'd0-axial Plane (d1={self.slice_y})', fontsize=10, fontweight='bold')
+            self.ax_xz.set_xlabel('d0')
+            self.ax_xz.set_ylabel('axial')
             self.figure_xz.tight_layout()
 
-            # Render YZ plane (X slice)
+            # Render d1-axial plane (YZ plane, d0 slice)
+            # origin='lower' so axial increases upward (more intuitive)
             slice_yz = volume[:, :, self.slice_x]
+            h_yz, w_yz = slice_yz.shape
             # Apply image adjustments if any
             if not self.adjuster.settings.is_default():
                 slice_yz = self.adjuster.apply_to_slice(slice_yz)
             im_yz = self.ax_yz.imshow(slice_yz, cmap=self.colormap, origin='lower',
                                        vmin=vmin, vmax=vmax, aspect='equal')
-            self._setSquareAspect(self.ax_yz, slice_yz.shape)
-            self.ax_yz.set_title(f'YZ Plane (X={self.slice_x})', fontsize=10, fontweight='bold')
-            self.ax_yz.axis('off')
-            # Draw axis arrows
-            self._drawAxisArrows(self.ax_yz, 'yz', slice_yz.shape)
+            self._setSquareAspectLower(self.ax_yz, slice_yz.shape)
+            self.ax_yz.set_title(f'd1-axial Plane (d0={self.slice_x})', fontsize=10, fontweight='bold')
+            self.ax_yz.set_xlabel('d1')
+            self.ax_yz.set_ylabel('axial')
             self.figure_yz.tight_layout()
 
             # Check if orientation overlay should be shown
@@ -3181,12 +3341,12 @@ class Viewer2D(QWidget):
                     # Determine which orientation type is selected (via radio buttons)
                     orientation_type = None
                     orientation_label = None
-                    if widgets['theta_radio'].isChecked():
-                        orientation_type = 'theta'
-                        orientation_label = 'X-Z'
-                    elif widgets['phi_radio'].isChecked():
-                        orientation_type = 'phi'
-                        orientation_label = 'Y-Z'
+                    if widgets['tilt_d0_radio'].isChecked():
+                        orientation_type = 'tilt_d0'
+                        orientation_label = 'Tilt d0'
+                    elif widgets['tilt_d1_radio'].isChecked():
+                        orientation_type = 'tilt_d1'
+                        orientation_label = 'Tilt d1'
                     elif widgets['angle_radio'].isChecked():
                         orientation_type = 'angle'
                         orientation_label = 'Reference'
@@ -3264,12 +3424,12 @@ class Viewer2D(QWidget):
         if 0 <= overlay_z < self.overlay_volume.shape[0]:
             overlay_xy = self.overlay_volume[overlay_z, :, :]
             im_overlay_xy = self.ax_xy.imshow(overlay_xy, cmap=self.orientation_colormap,
-                                               origin='lower', alpha=self.orientation_opacity,
+                                               origin='upper', alpha=self.orientation_opacity,
                                                vmin=ovmin, vmax=ovmax, aspect='equal',
                                                extent=[trim, trim + overlay_xy.shape[1],
                                                        trim, trim + overlay_xy.shape[0]])
 
-        # Overlay on XZ plane
+        # Overlay on XZ plane (origin='lower' so axial increases upward)
         if 0 <= overlay_y < self.overlay_volume.shape[1]:
             overlay_xz = self.overlay_volume[:, overlay_y, :]
             im_overlay_xz = self.ax_xz.imshow(overlay_xz, cmap=self.orientation_colormap,
@@ -3278,7 +3438,7 @@ class Viewer2D(QWidget):
                                                extent=[trim, trim + overlay_xz.shape[1],
                                                        trim, trim + overlay_xz.shape[0]])
 
-        # Overlay on YZ plane
+        # Overlay on YZ plane (origin='lower' so axial increases upward)
         if 0 <= overlay_x < self.overlay_volume.shape[2]:
             overlay_yz = self.overlay_volume[:, :, overlay_x]
             im_overlay_yz = self.ax_yz.imshow(overlay_yz, cmap=self.orientation_colormap,
@@ -3434,8 +3594,11 @@ class VolumeTab(QWidget):
         try:
             volume = self.viewer.current_volume
 
-            # Transpose from (Z, Y, X) to (X, Y, Z) for VTK coordinate system
-            # This matches the fiber trajectory VTP export coordinate system
+            # Transpose from internal (axial, d1, d0) to VTK (d0, d1, axial) = (X, Y, Z)
+            # VTK coordinate convention:
+            #   - X-axis = d0 (column coordinate, increases rightward)
+            #   - Y-axis = d1 (row coordinate, increases upward in visualization)
+            #   - Z-axis = axial (fiber direction, slice index)
             volume_vtk = np.transpose(volume, (2, 1, 0))
 
             # Create VTK ImageData
@@ -3479,7 +3642,6 @@ class VisualizationTab(QWidget):
         self.trajectory_settings = {
             'fiber_diameter': 12.0,
             'volume_fraction': 0.5,
-            'propagation_axis': 'Z (default)',
             'integration_method': 'RK4',
             'tilt_min': -20.0,
             'tilt_max': 20.0,
@@ -3590,12 +3752,12 @@ class VisualizationTab(QWidget):
 
         colormap_layout.addWidget(QLabel("Color Mode:"))
         self.color_mode_combo = QComboBox()
-        self.color_mode_combo.addItems(["X-Z Orientation", "Y-Z Orientation", "Azimuth", "Azimuth (saturation)"])
+        self.color_mode_combo.addItems(["Tilt d0", "Tilt d1", "Azimuth", "Azimuth (saturation)"])
         self.color_mode_combo.currentTextChanged.connect(self.updateVisualization)
         self.color_mode_combo.setToolTip(
-            "X-Z: Angle in X-Z plane (projection)\n"
-            "Y-Z: Angle in Y-Z plane (projection)\n"
-            "Azimuth: True azimuth (0°-360°, uniform saturation)\n"
+            "Tilt d0: Angle in d0-axial plane (projection)\n"
+            "Tilt d1: Angle in d1-axial plane (projection)\n"
+            "Azimuth: True azimuth (-180° to 180°, uniform saturation)\n"
             "Azimuth (saturation): Azimuth with tilt-based saturation"
         )
         colormap_layout.addWidget(self.color_mode_combo)
@@ -3674,7 +3836,7 @@ class VisualizationTab(QWidget):
 
         # Create 4 viewport frames with labels
         self.viewport_frames = []
-        viewport_titles = ["3D View", "XY Slice (Z)", "XZ Slice (Y)", "YZ Slice (X)"]
+        viewport_titles = ["3D View", "d0-d1 Slice (axial)", "d0-axial Slice (d1)", "d1-axial Slice (d0)"]
 
         from vmm.theme import get_viewer_frame_style, get_viewer_title_style
         for i, title in enumerate(viewport_titles):
@@ -4059,9 +4221,6 @@ class VisualizationTab(QWidget):
                             else:
                                 fiber_traj.polygon_mask = None
 
-                            # Propagation is always along Z-axis
-                            fiber_traj.propagation_axis = 2  # Z-axis
-
                             # Set fiber diameter from detection settings
                             diameters = all_slices[initial_slice]['diameters']
                             fiber_traj.fiber_diameter = np.mean(diameters) if len(diameters) > 0 else fiber_diameter
@@ -4086,16 +4245,9 @@ class VisualizationTab(QWidget):
 
                             # Exclude fibers near the boundary BEFORE initializing trajectories
                             boundary_margin = fiber_traj.fiber_diameter / 2.0
-                            prop_axis = fiber_traj.propagation_axis
-                            if prop_axis == 2:  # Z-axis
-                                dim0_max = roi_shape[1]  # y
-                                dim1_max = roi_shape[2]  # x
-                            elif prop_axis == 1:  # Y-axis
-                                dim0_max = roi_shape[0]  # z
-                                dim1_max = roi_shape[2]  # x
-                            else:  # X-axis
-                                dim0_max = roi_shape[0]  # z
-                                dim1_max = roi_shape[1]  # y
+                            # Z-axis propagation: sampling in XY plane
+                            dim0_max = roi_shape[1]  # y
+                            dim1_max = roi_shape[2]  # x
 
                             near_boundary = (
                                 (initial_centers[:, 0] < boundary_margin) |
@@ -4119,15 +4271,16 @@ class VisualizationTab(QWidget):
                             # Initialize points
                             fiber_traj.points = initial_centers
                             fiber_traj.trajectories = [(0, initial_centers.copy())]
-                            fiber_traj.angles = [np.zeros(len(initial_centers))]
-                            fiber_traj.azimuths = [np.zeros(len(initial_centers))]
+                            fiber_traj.tilt_xz = [np.zeros(len(initial_centers))]
+                            fiber_traj.tilt_yz = [np.zeros(len(initial_centers))]
+                            fiber_traj.azimuth = [np.zeros(len(initial_centers))]
 
                             # Initialize per-fiber trajectory data (only for valid fibers)
                             n_fibers = len(initial_centers)
                             fiber_traj.fiber_trajectories = [[(0, initial_centers[i].copy())] for i in range(n_fibers)]
-                            fiber_traj.fiber_angles = [[0.0] for _ in range(n_fibers)]
-                            fiber_traj.fiber_azimuths = [[0.0] for _ in range(n_fibers)]
-                            fiber_traj.fiber_azimuth_angles = [[0.0] for _ in range(n_fibers)]
+                            fiber_traj.fiber_tilt_xz = [[0.0] for _ in range(n_fibers)]
+                            fiber_traj.fiber_tilt_yz = [[0.0] for _ in range(n_fibers)]
+                            fiber_traj.fiber_azimuth = [[0.0] for _ in range(n_fibers)]
                             # All fibers are active (boundary fibers already excluded)
                             fiber_traj.active_fibers = np.ones(n_fibers, dtype=bool)
                     else:
@@ -4154,6 +4307,67 @@ class VisualizationTab(QWidget):
 
                     # Get resample settings
                     resample_interval = self.trajectory_settings['resample_interval'] if self.trajectory_settings['resample'] else 0
+
+                    # Get void mask aligned with ROI if available
+                    roi_void_mask = None
+                    if (self.main_window.viewer.void_mask is not None and
+                        self.main_window.viewer.void_roi_bounds is not None):
+                        void_mask = self.main_window.viewer.void_mask
+                        void_roi_bounds = self.main_window.viewer.void_roi_bounds
+                        vz_min, vz_max, vy_min, vy_max, vx_min, vx_max = void_roi_bounds
+
+                        # Check if void ROI overlaps with current ROI
+                        if (vz_min < z_max and vz_max > z_min and
+                            vy_min < y_max and vy_max > y_min and
+                            vx_min < x_max and vx_max > x_min):
+
+                            # Create aligned void mask for this ROI
+                            roi_void_mask = np.zeros(roi_shape, dtype=bool)
+
+                            # Map void mask to ROI coordinates
+                            for rz in range(roi_shape[0]):
+                                global_z = z_min + rz
+                                if vz_min <= global_z < vz_max:
+                                    void_z = global_z - vz_min
+                                    for ry in range(roi_shape[1]):
+                                        global_y = y_min + ry
+                                        if vy_min <= global_y < vy_max:
+                                            void_y = global_y - vy_min
+                                            for rx in range(roi_shape[2]):
+                                                global_x = x_min + rx
+                                                if vx_min <= global_x < vx_max:
+                                                    void_x = global_x - vx_min
+                                                    if (0 <= void_z < void_mask.shape[0] and
+                                                        0 <= void_y < void_mask.shape[1] and
+                                                        0 <= void_x < void_mask.shape[2]):
+                                                        roi_void_mask[rz, ry, rx] = void_mask[void_z, void_y, void_x]
+
+                            # Apply polygon mask to void mask if available
+                            if self.main_window.viewer.void_polygon_mask is not None:
+                                void_polygon_mask = self.main_window.viewer.void_polygon_mask
+                                for rz in range(roi_shape[0]):
+                                    global_z = z_min + rz
+                                    if vz_min <= global_z < vz_max:
+                                        void_z = global_z - vz_min
+                                        if void_z < len(void_polygon_mask):
+                                            for ry in range(roi_shape[1]):
+                                                global_y = y_min + ry
+                                                if vy_min <= global_y < vy_max:
+                                                    void_y = global_y - vy_min
+                                                    for rx in range(roi_shape[2]):
+                                                        global_x = x_min + rx
+                                                        if vx_min <= global_x < vx_max:
+                                                            void_x = global_x - vx_min
+                                                            if (void_y < void_polygon_mask.shape[1] and
+                                                                void_x < void_polygon_mask.shape[2]):
+                                                                if not void_polygon_mask[void_z, void_y, void_x]:
+                                                                    roi_void_mask[rz, ry, rx] = False
+
+                            void_count = np.sum(roi_void_mask)
+                            if void_count > 0:
+                                self.updateMainStatus(f"[{roi_name}] Using void mask: {void_count} void voxels")
+                            else:
+                                roi_void_mask = None  # No voids in this ROI
 
                     # Update status - Propagating trajectories
                     self.updateMainStatus(f"[{roi_name}] Propagating trajectories...")
@@ -4192,7 +4406,8 @@ class VisualizationTab(QWidget):
                             relax=relax,
                             relax_iterations=50,
                             stop_at_boundary=True,
-                            resample_interval=resample_interval
+                            resample_interval=resample_interval,
+                            void_mask=roi_void_mask
                         )
                     else:
                         fiber_traj.propagate(
@@ -4200,7 +4415,8 @@ class VisualizationTab(QWidget):
                             relax=relax,
                             relax_iterations=50,
                             stop_at_boundary=True,
-                            resample_interval=resample_interval
+                            resample_interval=resample_interval,
+                            void_mask=roi_void_mask
                         )
 
                     # Apply trajectory smoothing if enabled
@@ -4227,9 +4443,9 @@ class VisualizationTab(QWidget):
                     # Collect statistics
                     total_fibers += fiber_traj.get_num_fibers()
                     total_slices = max(total_slices, len(fiber_traj.trajectories))
-                    angles = fiber_traj.get_angles()
-                    if angles:
-                        all_angles_list.extend([np.concatenate(angles)])
+                    tilt_xz = fiber_traj.get_tilt_xz()
+                    if tilt_xz:
+                        all_angles_list.extend([np.concatenate(tilt_xz)])
 
             # Update statistics
             if all_angles_list:
@@ -4277,6 +4493,19 @@ class VisualizationTab(QWidget):
             # Get resample settings
             resample_interval = self.trajectory_settings['resample_interval'] if self.trajectory_settings['resample'] else 0
 
+            # Get void mask if available (for global structure tensor case)
+            global_void_mask = None
+            if (self.main_window and self.main_window.viewer.void_mask is not None):
+                global_void_mask = self.main_window.viewer.void_mask
+                # Apply polygon mask if available
+                if self.main_window.viewer.void_polygon_mask is not None:
+                    global_void_mask = global_void_mask & self.main_window.viewer.void_polygon_mask
+                void_count = np.sum(global_void_mask)
+                if void_count > 0:
+                    self.updateMainStatus(f"Using void mask: {void_count} void voxels")
+                else:
+                    global_void_mask = None
+
             # Update status - Propagating trajectories
             self.updateMainStatus("Propagating trajectories...")
 
@@ -4288,7 +4517,8 @@ class VisualizationTab(QWidget):
                     relax=relax,
                     relax_iterations=50,
                     stop_at_boundary=True,
-                    resample_interval=resample_interval
+                    resample_interval=resample_interval,
+                    void_mask=global_void_mask
                 )
             else:
                 self.fiber_trajectory.propagate(
@@ -4296,7 +4526,8 @@ class VisualizationTab(QWidget):
                     relax=relax,
                     relax_iterations=50,
                     stop_at_boundary=True,
-                    resample_interval=resample_interval
+                    resample_interval=resample_interval,
+                    void_mask=global_void_mask
                 )
 
             # Apply trajectory smoothing if enabled
@@ -4312,13 +4543,13 @@ class VisualizationTab(QWidget):
                 )
 
             # Update statistics
-            angles = self.fiber_trajectory.get_angles()
-            if angles:
-                all_angles = np.concatenate(angles)
+            tilt_xz = self.fiber_trajectory.get_tilt_xz()
+            if tilt_xz:
+                all_tilt_xz = np.concatenate(tilt_xz)
                 stats_text = f"Fibers: {self.fiber_trajectory.get_num_fibers()}\n"
                 stats_text += f"Slices: {len(self.fiber_trajectory.trajectories)}\n"
-                stats_text += f"Angle: {all_angles.mean():.2f}° ± {all_angles.std():.2f}°\n"
-                stats_text += f"Range: [{all_angles.min():.2f}°, {all_angles.max():.2f}°]"
+                stats_text += f"Tilt d0: {all_tilt_xz.mean():.2f}° ± {all_tilt_xz.std():.2f}°\n"
+                stats_text += f"Range: [{all_tilt_xz.min():.2f}°, {all_tilt_xz.max():.2f}°]"
                 self.stats_label.setText(stats_text)
 
         # Enable export buttons in MainWindow's ribbon
@@ -4448,23 +4679,23 @@ class VisualizationTab(QWidget):
         color_mode = self.color_mode_combo.currentText()
 
         # Determine which angle data to use based on color mode
-        # "X-Z Orientation" -> use angles (X-Z projection)
-        # "Y-Z Orientation" -> use azimuths (Y-Z projection)
+        # "Tilt d0" -> use angles (d0-axial projection)
+        # "Tilt d1" -> use azimuths (d1-axial projection)
         # "Azimuth" -> use azimuth_angles (true azimuth, uniform saturation)
         # "Azimuth (saturation)" -> use azimuth_angles with tilt-based saturation
-        use_xz = "X-Z" in color_mode
-        use_yz = "Y-Z" in color_mode
+        use_tilt_d0 = "Tilt d0" in color_mode
+        use_tilt_d1 = "Tilt d1" in color_mode
         use_true_azimuth = "Azimuth" in color_mode
         use_tilt_saturation = color_mode == "Azimuth (saturation)"
 
         # Set appropriate angle range based on color mode
-        # Azimuth uses HSV cyclic colormap (0-360)
-        # X-Z/Y-Z Orientation use linear colormap with user settings or defaults
+        # Azimuth uses HSV cyclic colormap (-180 to 180)
+        # Tilt d0/d1 use linear colormap with user settings or defaults
         if use_true_azimuth:
-            angle_min = 0.0
-            angle_max = 360.0
+            angle_min = -180.0
+            angle_max = 180.0
         else:
-            # Use user settings for X-Z/Y-Z orientation
+            # Use user settings for Tilt d0/d1
             angle_min = self.trajectory_settings['tilt_min']
             angle_max = self.trajectory_settings['tilt_max']
 
@@ -4477,8 +4708,8 @@ class VisualizationTab(QWidget):
         # Build all fiber trajectories as a single PolyData for efficiency
         all_points = []
         all_lines = []
-        all_angles_data = []  # X-Z orientation angles
-        all_azimuths_data = []  # Y-Z orientation angles
+        all_angles_data = []  # Tilt d0 angles
+        all_azimuths_data = []  # Tilt d1 angles
         all_azimuth_angles_data = []  # True azimuth angles (-180 to 180)
         all_fiber_indices = []  # track fiber index for color_by_fiber
         point_offset = 0
@@ -4522,67 +4753,69 @@ class VisualizationTab(QWidget):
             # Use per-fiber trajectories if available (variable length)
             if hasattr(fiber_traj, 'fiber_trajectories') and fiber_traj.fiber_trajectories:
                 fiber_trajectories = fiber_traj.fiber_trajectories
-                fiber_angles_list = fiber_traj.fiber_angles if hasattr(fiber_traj, 'fiber_angles') else None
-                fiber_azimuths_list = getattr(fiber_traj, 'fiber_azimuths', None)
-                fiber_azimuth_angles_list = getattr(fiber_traj, 'fiber_azimuth_angles', None)
+                fiber_tilt_xz_list = getattr(fiber_traj, 'fiber_tilt_xz', None)
+                fiber_tilt_yz_list = getattr(fiber_traj, 'fiber_tilt_yz', None)
+                fiber_azimuth_list = getattr(fiber_traj, 'fiber_azimuth', None)
 
                 for fiber_idx, traj in enumerate(fiber_trajectories):
                     if len(traj) < 2:
                         continue
 
                     # Get angle arrays for this fiber
-                    fiber_angles_arr = None
-                    fiber_azimuths_arr = None
-                    fiber_azimuth_angles_arr = None
+                    fiber_tilt_xz_arr = None
+                    fiber_tilt_yz_arr = None
+                    fiber_azimuth_arr = None
 
-                    if fiber_angles_list and fiber_idx < len(fiber_angles_list):
-                        fiber_angles_arr = fiber_angles_list[fiber_idx]
-                    if fiber_azimuths_list and fiber_idx < len(fiber_azimuths_list):
-                        fiber_azimuths_arr = fiber_azimuths_list[fiber_idx]
-                    if fiber_azimuth_angles_list and fiber_idx < len(fiber_azimuth_angles_list):
-                        fiber_azimuth_angles_arr = fiber_azimuth_angles_list[fiber_idx]
+                    if fiber_tilt_xz_list and fiber_idx < len(fiber_tilt_xz_list):
+                        fiber_tilt_xz_arr = fiber_tilt_xz_list[fiber_idx]
+                    if fiber_tilt_yz_list and fiber_idx < len(fiber_tilt_yz_list):
+                        fiber_tilt_yz_arr = fiber_tilt_yz_list[fiber_idx]
+                    if fiber_azimuth_list and fiber_idx < len(fiber_azimuth_list):
+                        fiber_azimuth_arr = fiber_azimuth_list[fiber_idx]
 
                     fiber_points = []
-                    fiber_angles = []
-                    fiber_azimuths = []
-                    fiber_azimuth_angles = []
+                    fiber_tilt_xz = []
+                    fiber_tilt_yz = []
+                    fiber_azimuth = []
 
                     for i, (z, point) in enumerate(traj):
-                        x = point[0] + x_offset
-                        y = point[1] + y_offset
-                        z_global = z + z_offset
+                        # 3D visualization coordinate mapping (same as VTK exports):
+                        # X = d0 (column), Y = d1 (row, up), Z = axial (fiber direction)
+                        x = point[0] + x_offset  # d0
+                        y = point[1] + y_offset  # d1
+                        z_global = z + z_offset  # axial
                         fiber_points.append([x, y, z_global])
 
                         # Get angles - use available data, otherwise use previous value or 0
-                        if fiber_angles_arr and i < len(fiber_angles_arr):
-                            fiber_angles.append(fiber_angles_arr[i])
-                        elif fiber_angles:
-                            fiber_angles.append(fiber_angles[-1])  # Use previous value
+                        if fiber_tilt_xz_arr and i < len(fiber_tilt_xz_arr):
+                            fiber_tilt_xz.append(fiber_tilt_xz_arr[i])
+                        elif fiber_tilt_xz:
+                            fiber_tilt_xz.append(fiber_tilt_xz[-1])  # Use previous value
                         else:
-                            fiber_angles.append(0.0)
+                            fiber_tilt_xz.append(0.0)
 
-                        if fiber_azimuths_arr and i < len(fiber_azimuths_arr):
-                            fiber_azimuths.append(fiber_azimuths_arr[i])
-                        elif fiber_azimuths:
-                            fiber_azimuths.append(fiber_azimuths[-1])  # Use previous value
+                        if fiber_tilt_yz_arr and i < len(fiber_tilt_yz_arr):
+                            fiber_tilt_yz.append(fiber_tilt_yz_arr[i])
+                        elif fiber_tilt_yz:
+                            fiber_tilt_yz.append(fiber_tilt_yz[-1])  # Use previous value
                         else:
-                            fiber_azimuths.append(0.0)
+                            fiber_tilt_yz.append(0.0)
 
-                        if fiber_azimuth_angles_arr and i < len(fiber_azimuth_angles_arr):
-                            fiber_azimuth_angles.append(fiber_azimuth_angles_arr[i])
-                        elif fiber_azimuth_angles:
-                            fiber_azimuth_angles.append(fiber_azimuth_angles[-1])  # Use previous value
+                        if fiber_azimuth_arr and i < len(fiber_azimuth_arr):
+                            fiber_azimuth.append(fiber_azimuth_arr[i])
+                        elif fiber_azimuth:
+                            fiber_azimuth.append(fiber_azimuth[-1])  # Use previous value
                         else:
-                            fiber_azimuth_angles.append(0.0)
+                            fiber_azimuth.append(0.0)
 
                     n_pts = len(fiber_points)
                     if n_pts < 2:
                         continue
 
                     all_points.extend(fiber_points)
-                    all_angles_data.extend(fiber_angles)
-                    all_azimuths_data.extend(fiber_azimuths)
-                    all_azimuth_angles_data.extend(fiber_azimuth_angles)
+                    all_angles_data.extend(fiber_tilt_xz)
+                    all_azimuths_data.extend(fiber_tilt_yz)
+                    all_azimuth_angles_data.extend(fiber_azimuth)
                     all_fiber_indices.extend([global_fiber_idx] * n_pts)  # same fiber index for all points
                     global_fiber_idx += 1
 
@@ -4593,9 +4826,9 @@ class VisualizationTab(QWidget):
             else:
                 # Fallback to old slice-based format
                 trajectories = fiber_traj.trajectories
-                angles = fiber_traj.angles
-                azimuths = getattr(fiber_traj, 'azimuths', angles)
-                azimuth_angles = getattr(fiber_traj, 'azimuth_angles', azimuths)
+                tilt_xz = fiber_traj.tilt_xz
+                tilt_yz = getattr(fiber_traj, 'tilt_yz', tilt_xz)
+                azimuth = getattr(fiber_traj, 'azimuth', tilt_yz)
 
                 if len(trajectories) < 2:
                     continue
@@ -4604,44 +4837,46 @@ class VisualizationTab(QWidget):
 
                 for fiber_idx in range(n_fibers):
                     fiber_points = []
-                    fiber_angles = []
-                    fiber_azimuths = []
-                    fiber_azimuth_angles = []
+                    fiber_tilt_xz = []
+                    fiber_tilt_yz = []
+                    fiber_azimuth = []
 
                     for slice_idx, (z, slice_points) in enumerate(trajectories):
-                        x = slice_points[fiber_idx, 0] + x_offset
-                        y = slice_points[fiber_idx, 1] + y_offset
-                        z_global = z + z_offset
+                        # 3D visualization coordinate mapping (same as VTK exports):
+                        # X = d0 (column), Y = d1 (row, up), Z = axial (fiber direction)
+                        x = slice_points[fiber_idx, 0] + x_offset  # d0
+                        y = slice_points[fiber_idx, 1] + y_offset  # d1
+                        z_global = z + z_offset  # axial
                         fiber_points.append([x, y, z_global])
 
                         # Get angles - use available data, otherwise use previous value or 0
-                        if slice_idx < len(angles) and fiber_idx < len(angles[slice_idx]):
-                            fiber_angles.append(angles[slice_idx][fiber_idx])
-                        elif fiber_angles:
-                            fiber_angles.append(fiber_angles[-1])
+                        if slice_idx < len(tilt_xz) and fiber_idx < len(tilt_xz[slice_idx]):
+                            fiber_tilt_xz.append(tilt_xz[slice_idx][fiber_idx])
+                        elif fiber_tilt_xz:
+                            fiber_tilt_xz.append(fiber_tilt_xz[-1])
                         else:
-                            fiber_angles.append(0.0)
-                        if slice_idx < len(azimuths) and fiber_idx < len(azimuths[slice_idx]):
-                            fiber_azimuths.append(azimuths[slice_idx][fiber_idx])
-                        elif fiber_azimuths:
-                            fiber_azimuths.append(fiber_azimuths[-1])
+                            fiber_tilt_xz.append(0.0)
+                        if slice_idx < len(tilt_yz) and fiber_idx < len(tilt_yz[slice_idx]):
+                            fiber_tilt_yz.append(tilt_yz[slice_idx][fiber_idx])
+                        elif fiber_tilt_yz:
+                            fiber_tilt_yz.append(fiber_tilt_yz[-1])
                         else:
-                            fiber_azimuths.append(0.0)
-                        if slice_idx < len(azimuth_angles) and fiber_idx < len(azimuth_angles[slice_idx]):
-                            fiber_azimuth_angles.append(azimuth_angles[slice_idx][fiber_idx])
-                        elif fiber_azimuth_angles:
-                            fiber_azimuth_angles.append(fiber_azimuth_angles[-1])
+                            fiber_tilt_yz.append(0.0)
+                        if slice_idx < len(azimuth) and fiber_idx < len(azimuth[slice_idx]):
+                            fiber_azimuth.append(azimuth[slice_idx][fiber_idx])
+                        elif fiber_azimuth:
+                            fiber_azimuth.append(fiber_azimuth[-1])
                         else:
-                            fiber_azimuth_angles.append(0.0)
+                            fiber_azimuth.append(0.0)
 
                     n_pts = len(fiber_points)
                     if n_pts < 2:
                         continue
 
                     all_points.extend(fiber_points)
-                    all_angles_data.extend(fiber_angles)
-                    all_azimuths_data.extend(fiber_azimuths)
-                    all_azimuth_angles_data.extend(fiber_azimuth_angles)
+                    all_angles_data.extend(fiber_tilt_xz)
+                    all_azimuths_data.extend(fiber_tilt_yz)
+                    all_azimuth_angles_data.extend(fiber_azimuth)
                     all_fiber_indices.extend([global_fiber_idx] * n_pts)  # same fiber index for all points
                     global_fiber_idx += 1
 
@@ -4676,9 +4911,8 @@ class VisualizationTab(QWidget):
         elif color_by_angle:
             if use_true_azimuth and all_azimuth_angles_data:
                 from matplotlib.colors import hsv_to_rgb
-                # True azimuth mode: convert -180~180 to 0~360 for cyclic colormap
+                # True azimuth mode: use -180~180 range
                 azimuth_arr = np.array(all_azimuth_angles_data)
-                azimuth_360 = np.where(azimuth_arr < 0, azimuth_arr + 360, azimuth_arr)
 
                 if use_tilt_saturation:
                     # Use tilt-based saturation with RGB colors
@@ -4687,10 +4921,10 @@ class VisualizationTab(QWidget):
                     sat_max = self.trajectory_settings.get('saturation_max', 45.0)
                     sat_range = sat_max - sat_min if sat_max > sat_min else 1.0
                     saturation = np.clip((np.abs(tilt_arr) - sat_min) / sat_range, 0, 1)
-                    # Build HSV and convert to RGB
-                    n_pts = len(azimuth_360)
+                    # Build HSV and convert to RGB (-180~180 mapped to 0~1 hue)
+                    n_pts = len(azimuth_arr)
                     hsv = np.zeros((n_pts, 3))
-                    hsv[:, 0] = azimuth_360 / 360.0
+                    hsv[:, 0] = (azimuth_arr + 180.0) / 360.0  # -180~180 -> 0~1
                     hsv[:, 1] = saturation
                     hsv[:, 2] = 1.0
                     rgb = hsv_to_rgb(hsv)
@@ -4703,19 +4937,20 @@ class VisualizationTab(QWidget):
                         render_lines_as_tubes=True
                     )
                 else:
-                    # Uniform saturation - use HSV colormap directly
-                    poly['angle'] = azimuth_360
+                    # Uniform saturation - use HSV colormap with -180 to 180 range
+                    # Keep original -180~180 data for colorbar display
+                    poly['angle'] = azimuth_arr
                     self.plotter_3d.add_mesh(
                         poly,
                         scalars='angle',
                         cmap='hsv',
-                        clim=(angle_min, angle_max),
+                        clim=(-180, 180),
                         line_width=line_width,
                         render_lines_as_tubes=True,
                         scalar_bar_args={'title': 'Azimuth (°)', 'n_labels': 5}
                     )
-            elif use_yz and all_azimuths_data:
-                # Y-Z orientation mode: use linear colormap
+            elif use_tilt_d1 and all_azimuths_data:
+                # Tilt d1 mode: use linear colormap
                 poly['angle'] = np.array(all_azimuths_data)
                 self.plotter_3d.add_mesh(
                     poly,
@@ -4724,10 +4959,10 @@ class VisualizationTab(QWidget):
                     clim=(angle_min, angle_max),
                     line_width=line_width,
                     render_lines_as_tubes=True,
-                    scalar_bar_args={'title': 'Y-Z Angle (°)', 'n_labels': 5}
+                    scalar_bar_args={'title': 'Tilt d1 (°)', 'n_labels': 5}
                 )
-            elif use_xz and all_angles_data:
-                # X-Z orientation mode: use linear colormap
+            elif use_tilt_d0 and all_angles_data:
+                # Tilt d0 mode: use linear colormap
                 poly['angle'] = np.array(all_angles_data)
                 self.plotter_3d.add_mesh(
                     poly,
@@ -4736,10 +4971,10 @@ class VisualizationTab(QWidget):
                     clim=(angle_min, angle_max),
                     line_width=line_width,
                     render_lines_as_tubes=True,
-                    scalar_bar_args={'title': 'X-Z Angle (°)', 'n_labels': 5}
+                    scalar_bar_args={'title': 'Tilt d0 (°)', 'n_labels': 5}
                 )
             elif all_angles_data:
-                # Default: X-Z orientation
+                # Default: Tilt d0
                 poly['angle'] = np.array(all_angles_data)
                 self.plotter_3d.add_mesh(
                     poly,
@@ -4810,20 +5045,20 @@ class VisualizationTab(QWidget):
         color_by_fiber = self.trajectory_settings.get('color_by_fiber', False)
         color_mode = self.color_mode_combo.currentText()
         # Determine which angle data to use based on color mode
-        # "X-Z Orientation" -> use angles (X-Z projection)
-        # "Y-Z Orientation" -> use azimuths (Y-Z projection)
+        # "Tilt d0" -> use angles (d0-axial projection)
+        # "Tilt d1" -> use azimuths (d1-axial projection)
         # "Azimuth" -> use azimuth_angles (true azimuth, uniform saturation)
         # "Azimuth (saturation)" -> use azimuth_angles with tilt-based saturation
-        use_xz = "X-Z" in color_mode
-        use_yz = "Y-Z" in color_mode
+        use_tilt_d0 = "Tilt d0" in color_mode
+        use_tilt_d1 = "Tilt d1" in color_mode
         use_true_azimuth = "Azimuth" in color_mode
         use_tilt_saturation = color_mode == "Azimuth (saturation)"
 
         # Set appropriate angle range based on color mode
-        # Azimuth uses HSV cyclic colormap (0-360)
+        # Azimuth uses HSV cyclic colormap (-180 to 180)
         if use_true_azimuth:
-            angle_min = 0.0
-            angle_max = 360.0
+            angle_min = -180.0
+            angle_max = 180.0
         else:
             angle_min = self.trajectory_settings['tilt_min']
             angle_max = self.trajectory_settings['tilt_max']
@@ -4855,7 +5090,7 @@ class VisualizationTab(QWidget):
             norm_angles = np.clip((angles_arr - angle_min) / (angle_max - angle_min + 1e-6), 0, 1)
             return cmap(norm_angles)
 
-        # Vectorized color computation for Y-Z orientation (uses angles_to_colors with azimuths_arr)
+        # Vectorized color computation for Tilt d1 (uses angles_to_colors with azimuths_arr)
         def yz_angles_to_colors(azimuths_arr, fiber_indices=None):
             if color_by_fiber and fiber_indices is not None:
                 n_fibers = len(fiber_indices)
@@ -4868,7 +5103,7 @@ class VisualizationTab(QWidget):
             norm_angles = np.clip((azimuths_arr - angle_min) / (angle_max - angle_min + 1e-6), 0, 1)
             return cmap(norm_angles)
 
-        # Vectorized color computation for true azimuth (HSV cyclic colormap, 0-360)
+        # Vectorized color computation for true azimuth (HSV cyclic colormap, -180 to 180)
         def true_azimuth_to_colors(azimuth_angles_arr, tilts_arr, fiber_indices=None):
             from matplotlib.colors import hsv_to_rgb
             if color_by_fiber and fiber_indices is not None:
@@ -4879,8 +5114,8 @@ class VisualizationTab(QWidget):
                 return colors
             if not color_by_angle:
                 return np.full((len(azimuth_angles_arr), 4), [0, 0, 1, 1])  # blue
-            # Convert -180~180 to 0~360 for cyclic colormap
-            azimuth_360 = np.where(azimuth_angles_arr < 0, azimuth_angles_arr + 360, azimuth_angles_arr)
+            # Convert -180~180 to 0~1 for HSV hue (internally uses 0~360 mapping)
+            azimuth_normalized = (azimuth_angles_arr + 180.0) / 360.0
             # Saturation: uniform or tilt-based
             if use_tilt_saturation:
                 sat_min = self.trajectory_settings.get('saturation_min', 0.0)
@@ -4888,13 +5123,13 @@ class VisualizationTab(QWidget):
                 sat_range = sat_max - sat_min if sat_max > sat_min else 1.0
                 saturation = np.clip((np.abs(tilts_arr) - sat_min) / sat_range, 0, 1)
             else:
-                saturation = np.ones(len(azimuth_360))  # Uniform saturation
+                saturation = np.ones(len(azimuth_normalized))  # Uniform saturation
             # Build HSV array
-            n_points = len(azimuth_360)
+            n_points = len(azimuth_normalized)
             hsv = np.zeros((n_points, 3))
-            hsv[:, 0] = azimuth_360 / 360.0  # Hue
-            hsv[:, 1] = saturation            # Saturation
-            hsv[:, 2] = 1.0                   # Value
+            hsv[:, 0] = azimuth_normalized  # Hue (0-1, maps -180~180 to color wheel)
+            hsv[:, 1] = saturation          # Saturation
+            hsv[:, 2] = 1.0                 # Value
             rgb = hsv_to_rgb(hsv)
             # Add alpha channel
             colors = np.ones((n_points, 4))
@@ -4915,27 +5150,27 @@ class VisualizationTab(QWidget):
         ax_xy = canvas_xy.axes
         ax_xy.clear()
         ax_xy.set_facecolor(COLORS['chart_bg'])
-        ax_xy.set_title(f'XY Slice at Z={z_pos}', color=COLORS['text_white'], fontsize=10)
-        ax_xy.set_xlabel('X', color=COLORS['text_white'], fontsize=8)
-        ax_xy.set_ylabel('Y', color=COLORS['text_white'], fontsize=8)
+        ax_xy.set_title(f'd0-d1 Slice (axial={z_pos})', color=COLORS['text_white'], fontsize=10)
+        ax_xy.set_xlabel('d0 (X)', color=COLORS['text_white'], fontsize=8)
+        ax_xy.set_ylabel('d1 (Y)', color=COLORS['text_white'], fontsize=8)
         ax_xy.tick_params(colors=COLORS['text_white'], labelsize=8)
 
         canvas_xz = self.viewport_frames[2]['canvas']
         ax_xz = canvas_xz.axes
         ax_xz.clear()
         ax_xz.set_facecolor(COLORS['chart_bg'])
-        ax_xz.set_title(f'XZ Slice at Y={y_pos}', color=COLORS['text_white'], fontsize=10)
-        ax_xz.set_xlabel('X', color=COLORS['text_white'], fontsize=8)
-        ax_xz.set_ylabel('Z', color=COLORS['text_white'], fontsize=8)
+        ax_xz.set_title(f'd0-axial Slice (d1={y_pos})', color=COLORS['text_white'], fontsize=10)
+        ax_xz.set_xlabel('d0 (X)', color=COLORS['text_white'], fontsize=8)
+        ax_xz.set_ylabel('axial (Z)', color=COLORS['text_white'], fontsize=8)
         ax_xz.tick_params(colors=COLORS['text_white'], labelsize=8)
 
         canvas_yz = self.viewport_frames[3]['canvas']
         ax_yz = canvas_yz.axes
         ax_yz.clear()
         ax_yz.set_facecolor(COLORS['chart_bg'])
-        ax_yz.set_title(f'YZ Slice at X={x_pos}', color=COLORS['text_white'], fontsize=10)
-        ax_yz.set_xlabel('Y', color=COLORS['text_white'], fontsize=8)
-        ax_yz.set_ylabel('Z', color=COLORS['text_white'], fontsize=8)
+        ax_yz.set_title(f'd1-axial Slice (d0={x_pos})', color=COLORS['text_white'], fontsize=10)
+        ax_yz.set_xlabel('d1 (Y)', color=COLORS['text_white'], fontsize=8)
+        ax_yz.set_ylabel('axial (Z)', color=COLORS['text_white'], fontsize=8)
         ax_yz.tick_params(colors=COLORS['text_white'], labelsize=8)
 
         # Show CT images from global volume, volume_data, or ROI volumes
@@ -4949,14 +5184,18 @@ class VisualizationTab(QWidget):
 
             if ct_volume is not None:
                 # Use global/stored volume
+                # XY plane: extent Y range is [height, 0] to match Y-down coordinate (d1 increases downward)
                 if z_pos < ct_volume.shape[0]:
                     ct_slice = ct_volume[z_pos, :, :]
-                    ax_xy.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='lower',
-                                extent=[0, ct_slice.shape[1], 0, ct_slice.shape[0]])
+                    ax_xy.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='upper',
+                                extent=[0, ct_slice.shape[1], ct_slice.shape[0], 0])
+                # XZ plane: vertical axis is Z (axial), origin='lower' so axial increases upward
                 if y_pos < ct_volume.shape[1]:
                     ct_slice = ct_volume[:, y_pos, :]
                     ax_xz.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='lower',
                                 extent=[0, ct_slice.shape[1], 0, ct_slice.shape[0]], aspect='auto')
+                # YZ plane: horizontal is Y (d1), vertical is Z (axial)
+                # origin='lower' so axial increases upward
                 if x_pos < ct_volume.shape[2]:
                     ct_slice = ct_volume[:, :, x_pos]
                     ax_yz.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='lower',
@@ -4976,15 +5215,17 @@ class VisualizationTab(QWidget):
                     offset = roi_data['offset']  # (z_offset, y_offset, x_offset)
                     z_offset, y_offset, x_offset = offset
 
-                    # XY slice - check if z_pos is within this ROI
+                    # d0-d1 slice - check if axial is within this ROI
+                    # XY plane: extent Y range inverted for Y-down coordinate
                     roi_z_pos = z_pos - z_offset
                     if 0 <= roi_z_pos < roi_volume.shape[0]:
                         ct_slice = roi_volume[roi_z_pos, :, :]
-                        ax_xy.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='lower',
+                        ax_xy.imshow(ct_slice, cmap='gray', alpha=ct_alpha, origin='upper',
                                     extent=[x_offset, x_offset + ct_slice.shape[1],
-                                           y_offset, y_offset + ct_slice.shape[0]])
+                                           y_offset + ct_slice.shape[0], y_offset])
 
-                    # XZ slice - check if y_pos is within this ROI
+                    # d0-axial slice - check if d1 is within this ROI
+                    # origin='lower' so axial increases upward
                     roi_y_pos = y_pos - y_offset
                     if 0 <= roi_y_pos < roi_volume.shape[1]:
                         ct_slice = roi_volume[:, roi_y_pos, :]
@@ -4992,7 +5233,9 @@ class VisualizationTab(QWidget):
                                     extent=[x_offset, x_offset + ct_slice.shape[1],
                                            z_offset, z_offset + ct_slice.shape[0]], aspect='auto')
 
-                    # YZ slice - check if x_pos is within this ROI
+                    # d1-axial slice - check if d0 is within this ROI
+                    # YZ plane: horizontal is Y (d1), vertical is Z (axial)
+                    # origin='lower' so axial increases upward
                     roi_x_pos = x_pos - x_offset
                     if 0 <= roi_x_pos < roi_volume.shape[2]:
                         ct_slice = roi_volume[:, :, roi_x_pos]
@@ -5029,10 +5272,10 @@ class VisualizationTab(QWidget):
                 offset = roi_data['offset']  # (z_offset, y_offset, x_offset)
                 z_offset, y_offset, x_offset = offset
                 trajectories = fiber_traj.trajectories
-                angles = fiber_traj.angles if fiber_traj.angles else []
-                azimuths = getattr(fiber_traj, 'azimuths', None)
-                if azimuths is None or len(azimuths) == 0:
-                    azimuths = angles  # fallback to angles if azimuths not available
+                tilt_xz = fiber_traj.tilt_xz if fiber_traj.tilt_xz else []
+                tilt_yz = getattr(fiber_traj, 'tilt_yz', None)
+                if tilt_yz is None or len(tilt_yz) == 0:
+                    tilt_yz = tilt_xz  # fallback to tilt_xz if tilt_yz not available
 
                 # Get ROI bounds for range checking
                 bounds = roi_data.get('bounds', None)
@@ -5046,8 +5289,7 @@ class VisualizationTab(QWidget):
                     roi_depth = len(trajectories)
                     roi_height = roi_width = 1000  # fallback for width/height
 
-                # Get propagation axis and fiber diameter for circle rendering
-                prop_axis = getattr(fiber_traj, 'propagation_axis', 2)
+                # Get fiber diameter for circle rendering
                 fiber_diameter = getattr(fiber_traj, 'fiber_diameter', 7.0)
                 radius = fiber_diameter / 2.0
 
@@ -5078,26 +5320,27 @@ class VisualizationTab(QWidget):
                     z, points = trajectories[roi_z_pos]
                     n_points = len(points)
 
-                    slice_angles = get_padded_angles_roi(angles, roi_z_pos, n_points)
+                    slice_angles = get_padded_angles_roi(tilt_xz, roi_z_pos, n_points)
                     fiber_indices = np.arange(n_points)  # fiber index for each point
 
-                    # Get azimuths for Y-Z or true azimuth mode
-                    if use_yz or use_true_azimuth:
-                        slice_azimuths = get_padded_angles_roi(azimuths, roi_z_pos, n_points)
+                    # Get azimuths for Tilt d1 or true azimuth mode
+                    if use_tilt_d1 or use_true_azimuth:
+                        slice_azimuths = get_padded_angles_roi(tilt_yz, roi_z_pos, n_points)
                         if use_true_azimuth:
                             # Get true azimuth angles if available
-                            azimuth_angles_data = getattr(fiber_traj, 'azimuth_angles', None)
-                            if azimuth_angles_data:
-                                slice_azimuth_angles = get_padded_angles_roi(azimuth_angles_data, roi_z_pos, n_points)
+                            azimuth_data = getattr(fiber_traj, 'azimuth', None)
+                            if azimuth_data:
+                                slice_azimuth_angles = get_padded_angles_roi(azimuth_data, roi_z_pos, n_points)
                             else:
-                                slice_azimuth_angles = slice_azimuths  # fallback to azimuths
+                                slice_azimuth_angles = slice_azimuths  # fallback to tilt_yz
                             colors = true_azimuth_to_colors(slice_azimuth_angles, slice_angles, fiber_indices)
                         else:
                             colors = yz_angles_to_colors(slice_azimuths, fiber_indices)
                     else:
                         colors = angles_to_colors(slice_angles, fiber_indices)
                     ax_xy.scatter(points[:, 0] + x_offset, points[:, 1] + y_offset, c=colors, s=4, alpha=0.8)
-                    if show_fiber_diameter and prop_axis == 2:
+                    if show_fiber_diameter:
+                        # Z-axis propagation: show fiber circles on XY plane
                         centers = [(pt[0] + x_offset, pt[1] + y_offset) for pt in points]
                         draw_circles_batch(ax_xy, centers, radius)
 
@@ -5105,7 +5348,6 @@ class VisualizationTab(QWidget):
                 roi_y_pos = y_pos - y_offset
                 xz_x_all, xz_z_all, xz_angles_all, xz_azimuths_all = [], [], [], []
                 xz_fiber_indices_all = []  # track fiber indices for color_by_fiber
-                xz_circle_centers = []
 
                 # Always process - let the mask filter out points that don't match
                 # This ensures we don't miss points due to incorrect bounds calculation
@@ -5119,13 +5361,11 @@ class VisualizationTab(QWidget):
                             xz_x_all.extend(points[mask, 0] + x_offset)
                             xz_z_all.extend(np.full(n_matched, slice_idx + z_offset))
                             # Get angles with proper padding for resampled fibers
-                            xz_angles_all.extend(get_slice_angles_masked_roi(angles, slice_idx, n_pts, mask))
+                            xz_angles_all.extend(get_slice_angles_masked_roi(tilt_xz, slice_idx, n_pts, mask))
                             xz_fiber_indices_all.extend(matched_indices)
-                            # Get azimuths for Y-Z or true azimuth mode
-                            if use_yz or use_true_azimuth:
-                                xz_azimuths_all.extend(get_slice_angles_masked_roi(azimuths, slice_idx, n_pts, mask))
-                            if show_fiber_diameter and prop_axis == 1:
-                                xz_circle_centers.extend([(pt[0] + x_offset, slice_idx + z_offset) for pt in points[mask]])
+                            # Get azimuths for Tilt d1 or true azimuth mode
+                            if use_tilt_d1 or use_true_azimuth:
+                                xz_azimuths_all.extend(get_slice_angles_masked_roi(tilt_yz, slice_idx, n_pts, mask))
 
                 if xz_x_all:
                     xz_x_all = np.array(xz_x_all)
@@ -5134,7 +5374,7 @@ class VisualizationTab(QWidget):
                     xz_fiber_indices_all = np.array(xz_fiber_indices_all)
                     # Ensure all arrays have the same length
                     n_points = len(xz_x_all)
-                    if (use_yz or use_true_azimuth) and len(xz_azimuths_all) == n_points:
+                    if (use_tilt_d1 or use_true_azimuth) and len(xz_azimuths_all) == n_points:
                         xz_azimuths_all = np.array(xz_azimuths_all)
                         if use_true_azimuth:
                             colors = true_azimuth_to_colors(xz_azimuths_all, xz_angles_all, xz_fiber_indices_all)
@@ -5143,14 +5383,11 @@ class VisualizationTab(QWidget):
                     else:
                         colors = angles_to_colors(xz_angles_all, xz_fiber_indices_all)
                     ax_xz.scatter(xz_x_all, xz_z_all, c=colors, s=2, alpha=0.6)
-                    if xz_circle_centers:
-                        draw_circles_batch(ax_xz, xz_circle_centers, radius)
 
                 # YZ Slice - collect all points near x_pos in one pass
                 roi_x_pos = x_pos - x_offset
                 yz_y_all, yz_z_all, yz_angles_all, yz_azimuths_all = [], [], [], []
                 yz_fiber_indices_all = []  # track fiber indices for color_by_fiber
-                yz_circle_centers = []
                 # Always process - let the mask filter out points that don't match
                 if roi_x_pos >= -tolerance:
                     for slice_idx, (z, points) in enumerate(trajectories):
@@ -5162,13 +5399,11 @@ class VisualizationTab(QWidget):
                             yz_y_all.extend(points[mask, 1] + y_offset)
                             yz_z_all.extend(np.full(n_matched, slice_idx + z_offset))
                             # Get angles with proper padding for resampled fibers
-                            yz_angles_all.extend(get_slice_angles_masked_roi(angles, slice_idx, n_pts, mask))
+                            yz_angles_all.extend(get_slice_angles_masked_roi(tilt_xz, slice_idx, n_pts, mask))
                             yz_fiber_indices_all.extend(matched_indices)
-                            # Get azimuths for Y-Z or true azimuth mode
-                            if use_yz or use_true_azimuth:
-                                yz_azimuths_all.extend(get_slice_angles_masked_roi(azimuths, slice_idx, n_pts, mask))
-                            if show_fiber_diameter and prop_axis == 0:
-                                yz_circle_centers.extend([(pt[1] + y_offset, slice_idx + z_offset) for pt in points[mask]])
+                            # Get azimuths for Tilt d1 or true azimuth mode
+                            if use_tilt_d1 or use_true_azimuth:
+                                yz_azimuths_all.extend(get_slice_angles_masked_roi(tilt_yz, slice_idx, n_pts, mask))
 
                 if yz_y_all:
                     yz_y_all = np.array(yz_y_all)
@@ -5177,7 +5412,7 @@ class VisualizationTab(QWidget):
                     yz_fiber_indices_all = np.array(yz_fiber_indices_all)
                     # Ensure all arrays have the same length
                     n_points = len(yz_y_all)
-                    if (use_yz or use_true_azimuth) and len(yz_azimuths_all) == n_points:
+                    if (use_tilt_d1 or use_true_azimuth) and len(yz_azimuths_all) == n_points:
                         yz_azimuths_all = np.array(yz_azimuths_all)
                         if use_true_azimuth:
                             colors = true_azimuth_to_colors(yz_azimuths_all, yz_angles_all, yz_fiber_indices_all)
@@ -5186,18 +5421,15 @@ class VisualizationTab(QWidget):
                     else:
                         colors = angles_to_colors(yz_angles_all, yz_fiber_indices_all)
                     ax_yz.scatter(yz_y_all, yz_z_all, c=colors, s=2, alpha=0.6)
-                    if yz_circle_centers:
-                        draw_circles_batch(ax_yz, yz_circle_centers, radius)
 
         elif self.fiber_trajectory is not None:
             # Fall back to single trajectory rendering
             trajectories = self.fiber_trajectory.trajectories
-            angles = self.fiber_trajectory.angles if self.fiber_trajectory.angles else []
-            azimuths = getattr(self.fiber_trajectory, 'azimuths', None)
-            if azimuths is None or len(azimuths) == 0:
-                azimuths = angles  # fallback to angles if azimuths not available
+            tilt_xz = self.fiber_trajectory.tilt_xz if self.fiber_trajectory.tilt_xz else []
+            tilt_yz = getattr(self.fiber_trajectory, 'tilt_yz', None)
+            if tilt_yz is None or len(tilt_yz) == 0:
+                tilt_yz = tilt_xz  # fallback to tilt_xz if tilt_yz not available
 
-            prop_axis = getattr(self.fiber_trajectory, 'propagation_axis', 2)
             fiber_diameter = getattr(self.fiber_trajectory, 'fiber_diameter', 7.0)
             radius = fiber_diameter / 2.0
 
@@ -5215,7 +5447,7 @@ class VisualizationTab(QWidget):
                         return arr[:n_pts]
                 return np.zeros(n_pts)
 
-            # Helper function to get padded angles for XZ/YZ slices with mask
+            # Helper function to get padded angles for d0-axial/d1-axial slices with mask
             def get_slice_angles_masked(angle_arr, slice_idx, n_pts, mask):
                 padded = get_padded_angles(angle_arr, slice_idx, n_pts)
                 return padded[mask]
@@ -5224,16 +5456,16 @@ class VisualizationTab(QWidget):
                 z, points = trajectories[z_pos]
                 n_points = len(points)
 
-                slice_angles = get_padded_angles(angles, z_pos, n_points)
+                slice_angles = get_padded_angles(tilt_xz, z_pos, n_points)
                 fiber_indices = np.arange(n_points)  # fiber index for each point
 
-                # Get azimuths for Y-Z or true azimuth mode
-                if use_yz or use_true_azimuth:
-                    slice_azimuths = get_padded_angles(azimuths, z_pos, n_points)
+                # Get azimuths for Tilt d1 or true azimuth mode
+                if use_tilt_d1 or use_true_azimuth:
+                    slice_azimuths = get_padded_angles(tilt_yz, z_pos, n_points)
                     if use_true_azimuth:
-                        azimuth_angles = getattr(self.fiber_trajectory, 'azimuth_angles', None)
-                        if azimuth_angles:
-                            slice_azimuth_angles = get_padded_angles(azimuth_angles, z_pos, n_points)
+                        azimuth_data = getattr(self.fiber_trajectory, 'azimuth', None)
+                        if azimuth_data:
+                            slice_azimuth_angles = get_padded_angles(azimuth_data, z_pos, n_points)
                         else:
                             slice_azimuth_angles = slice_azimuths
                         colors = true_azimuth_to_colors(slice_azimuth_angles, slice_angles, fiber_indices)
@@ -5242,14 +5474,13 @@ class VisualizationTab(QWidget):
                 else:
                     colors = angles_to_colors(slice_angles, fiber_indices)
                 ax_xy.scatter(points[:, 0], points[:, 1], c=colors, s=4, alpha=0.8)
-                if show_fiber_diameter and prop_axis == 2:
+                if show_fiber_diameter:
                     centers = [(pt[0], pt[1]) for pt in points]
                     draw_circles_batch(ax_xy, centers, radius)
 
             # XZ Slice - batch collection
             xz_x_all, xz_z_all, xz_angles_all, xz_azimuths_all = [], [], [], []
             xz_fiber_indices_all = []
-            xz_circle_centers = []
             for slice_idx, (z, points) in enumerate(trajectories):
                 mask = np.abs(points[:, 1] - y_pos) < tolerance
                 if np.any(mask):
@@ -5259,13 +5490,11 @@ class VisualizationTab(QWidget):
                     xz_x_all.extend(points[mask, 0])
                     xz_z_all.extend(np.full(n_matched, slice_idx))
                     # Get angles with proper padding for resampled fibers
-                    xz_angles_all.extend(get_slice_angles_masked(angles, slice_idx, n_pts, mask))
+                    xz_angles_all.extend(get_slice_angles_masked(tilt_xz, slice_idx, n_pts, mask))
                     xz_fiber_indices_all.extend(matched_indices)
-                    # Get azimuths for Y-Z or true azimuth mode
-                    if use_yz or use_true_azimuth:
-                        xz_azimuths_all.extend(get_slice_angles_masked(azimuths, slice_idx, n_pts, mask))
-                    if show_fiber_diameter and prop_axis == 1:
-                        xz_circle_centers.extend([(pt[0], slice_idx) for pt in points[mask]])
+                    # Get azimuths for Tilt d1 or true azimuth mode
+                    if use_tilt_d1 or use_true_azimuth:
+                        xz_azimuths_all.extend(get_slice_angles_masked(tilt_yz, slice_idx, n_pts, mask))
 
             if xz_x_all:
                 xz_x_all = np.array(xz_x_all)
@@ -5274,7 +5503,7 @@ class VisualizationTab(QWidget):
                 xz_fiber_indices_all = np.array(xz_fiber_indices_all)
                 # Ensure all arrays have the same length
                 n_points = len(xz_x_all)
-                if (use_yz or use_true_azimuth) and len(xz_azimuths_all) == n_points:
+                if (use_tilt_d1 or use_true_azimuth) and len(xz_azimuths_all) == n_points:
                     xz_azimuths_all = np.array(xz_azimuths_all)
                     if use_true_azimuth:
                         colors = true_azimuth_to_colors(xz_azimuths_all, xz_angles_all, xz_fiber_indices_all)
@@ -5283,13 +5512,10 @@ class VisualizationTab(QWidget):
                 else:
                     colors = angles_to_colors(xz_angles_all, xz_fiber_indices_all)
                 ax_xz.scatter(xz_x_all, xz_z_all, c=colors, s=2, alpha=0.6)
-                if xz_circle_centers:
-                    draw_circles_batch(ax_xz, xz_circle_centers, radius)
 
             # YZ Slice - batch collection
             yz_y_all, yz_z_all, yz_angles_all, yz_azimuths_all = [], [], [], []
             yz_fiber_indices_all = []
-            yz_circle_centers = []
             for slice_idx, (z, points) in enumerate(trajectories):
                 mask = np.abs(points[:, 0] - x_pos) < tolerance
                 if np.any(mask):
@@ -5299,13 +5525,11 @@ class VisualizationTab(QWidget):
                     yz_y_all.extend(points[mask, 1])
                     yz_z_all.extend(np.full(n_matched, slice_idx))
                     # Get angles with proper padding for resampled fibers
-                    yz_angles_all.extend(get_slice_angles_masked(angles, slice_idx, n_pts, mask))
+                    yz_angles_all.extend(get_slice_angles_masked(tilt_xz, slice_idx, n_pts, mask))
                     yz_fiber_indices_all.extend(matched_indices)
-                    # Get azimuths for Y-Z or true azimuth mode
-                    if use_yz or use_true_azimuth:
-                        yz_azimuths_all.extend(get_slice_angles_masked(azimuths, slice_idx, n_pts, mask))
-                    if show_fiber_diameter and prop_axis == 0:
-                        yz_circle_centers.extend([(pt[1], slice_idx) for pt in points[mask]])
+                    # Get azimuths for Tilt d1 or true azimuth mode
+                    if use_tilt_d1 or use_true_azimuth:
+                        yz_azimuths_all.extend(get_slice_angles_masked(tilt_yz, slice_idx, n_pts, mask))
 
             if yz_y_all:
                 yz_y_all = np.array(yz_y_all)
@@ -5314,7 +5538,7 @@ class VisualizationTab(QWidget):
                 yz_fiber_indices_all = np.array(yz_fiber_indices_all)
                 # Ensure all arrays have the same length
                 n_points = len(yz_y_all)
-                if (use_yz or use_true_azimuth) and len(yz_azimuths_all) == n_points:
+                if (use_tilt_d1 or use_true_azimuth) and len(yz_azimuths_all) == n_points:
                     yz_azimuths_all = np.array(yz_azimuths_all)
                     if use_true_azimuth:
                         colors = true_azimuth_to_colors(yz_azimuths_all, yz_angles_all, yz_fiber_indices_all)
@@ -5327,20 +5551,21 @@ class VisualizationTab(QWidget):
                     draw_circles_batch(ax_yz, yz_circle_centers, radius)
 
         # Set axis limits based on global volume or ROI bounds
+        # Y-down coordinate: Y-axis is inverted for XY view (ax_xy)
         if global_volume is not None:
             ax_xy.set_xlim(0, global_volume.shape[2])
-            ax_xy.set_ylim(0, global_volume.shape[1])
+            ax_xy.set_ylim(global_volume.shape[1], 0)  # Y inverted for Y-down
             ax_xz.set_xlim(0, global_volume.shape[2])
             ax_xz.set_ylim(0, global_volume.shape[0])
-            ax_yz.set_xlim(0, global_volume.shape[1])
+            ax_yz.set_xlim(global_volume.shape[1], 0)  # Y inverted for Y-down
             ax_yz.set_ylim(0, global_volume.shape[0])
         elif self.volume_shape is not None:
             # Use stored volume shape from structure tensor
             ax_xy.set_xlim(0, self.volume_shape[2])
-            ax_xy.set_ylim(0, self.volume_shape[1])
+            ax_xy.set_ylim(self.volume_shape[1], 0)  # Y inverted for Y-down
             ax_xz.set_xlim(0, self.volume_shape[2])
             ax_xz.set_ylim(0, self.volume_shape[0])
-            ax_yz.set_xlim(0, self.volume_shape[1])
+            ax_yz.set_xlim(self.volume_shape[1], 0)  # Y inverted for Y-down
             ax_yz.set_ylim(0, self.volume_shape[0])
         elif self.roi_trajectories:
             # Compute bounds from ROI trajectories
@@ -5368,10 +5593,10 @@ class VisualizationTab(QWidget):
                                 y_max = max(y_max, y_offset + np.max(points[:, 1]))
             if x_max > 0 and y_max > 0 and z_max > 0:
                 ax_xy.set_xlim(0, x_max)
-                ax_xy.set_ylim(0, y_max)
+                ax_xy.set_ylim(y_max, 0)  # Y inverted for Y-down
                 ax_xz.set_xlim(0, x_max)
                 ax_xz.set_ylim(0, z_max)
-                ax_yz.set_xlim(0, y_max)
+                ax_yz.set_xlim(y_max, 0)  # Y inverted for Y-down
                 ax_yz.set_ylim(0, z_max)
 
         ax_xy.set_aspect('equal')
@@ -5413,8 +5638,9 @@ class VisualizationTab(QWidget):
         # Check if we have any data
         has_tilt = angle_data.get('tilt') is not None and len(angle_data['tilt']) > 0
         has_azimuth = angle_data.get('azimuth') is not None and len(angle_data['azimuth']) > 0
+        has_geometric = angle_data.get('geometric') is not None and len(angle_data['geometric']) > 0
 
-        if not has_tilt and not has_azimuth:
+        if not has_tilt and not has_azimuth and not has_geometric:
             QMessageBox.warning(self, "No Data", "No trajectory angle data available.\n\nPlease generate fiber trajectory first.")
             return
 
@@ -5426,12 +5652,16 @@ class VisualizationTab(QWidget):
     def _collectTrajectoryAngles(self, config):
         """Collect trajectory angle data from all ROIs or single trajectory."""
         angle_data = {
-            'tilt': [],           # X-Z orientation
-            'azimuth': [],        # Y-Z orientation
-            'true_azimuth': []    # True azimuth: arctan2(v_d1, v_d0) without sign correction
+            'tilt': [],           # Tilt d0 (d0-axial plane angle)
+            'azimuth': [],        # Tilt d1 (d1-axial plane angle)
+            'true_azimuth': [],   # True azimuth: arctan2(v_d1, v_d0) without sign correction
+            'geometric': []       # Geometric misalignment from coordinate differences
         }
 
         collected = False
+        use_geometric = config.get('angle_source') == 'geometric'
+        voxel_axial = config.get('voxel_size_axial', 1.0)
+        voxel_lateral = config.get('voxel_size_lateral', 1.0)
 
         def collect_from_trajectory(traj):
             """Helper to collect angles from a trajectory object."""
@@ -5439,27 +5669,43 @@ class VisualizationTab(QWidget):
             if not traj:
                 return
 
-            # Get X-Z orientation angles (tilt)
-            if hasattr(traj, 'angles') and traj.angles:
-                for slice_angles in traj.angles:
-                    if slice_angles is not None:
-                        arr = np.array(slice_angles).flatten()
-                        angle_data['tilt'].extend(arr.tolist())
+            if use_geometric:
+                # Compute angles from coordinate differences
+                angles = traj.compute_geometric_misalignment(
+                    voxel_size_axial=voxel_axial,
+                    voxel_size_lateral=voxel_lateral)
+                if len(angles) > 0:
+                    angle_data['geometric'].extend(angles.tolist())
+                    collected = True
+            else:
+                # Structure Tensor based angles
+                if hasattr(traj, 'tilt_xz') and traj.tilt_xz:
+                    for slice_tilt_xz in traj.tilt_xz:
+                        if slice_tilt_xz is not None:
+                            arr = np.array(slice_tilt_xz).flatten()
+                            angle_data['tilt'].extend(arr.tolist())
+                            collected = True
+
+                if hasattr(traj, 'tilt_yz') and traj.tilt_yz:
+                    for slice_tilt_yz in traj.tilt_yz:
+                        if slice_tilt_yz is not None:
+                            arr = np.array(slice_tilt_yz).flatten()
+                            angle_data['azimuth'].extend(arr.tolist())
+
+                if hasattr(traj, 'azimuth') and traj.azimuth:
+                    for slice_azimuth in traj.azimuth:
+                        if slice_azimuth is not None:
+                            arr = np.array(slice_azimuth).flatten()
+                            angle_data['true_azimuth'].extend(arr.tolist())
+
+                # Also collect geometric if checkbox was checked
+                if config.get('angles', {}).get('geometric', False):
+                    angles = traj.compute_geometric_misalignment(
+                        voxel_size_axial=voxel_axial,
+                        voxel_size_lateral=voxel_lateral)
+                    if len(angles) > 0:
+                        angle_data['geometric'].extend(angles.tolist())
                         collected = True
-
-            # Get Y-Z orientation angles (azimuth)
-            if hasattr(traj, 'azimuths') and traj.azimuths:
-                for slice_azimuths in traj.azimuths:
-                    if slice_azimuths is not None:
-                        arr = np.array(slice_azimuths).flatten()
-                        angle_data['azimuth'].extend(arr.tolist())
-
-            # Get true azimuth angles
-            if hasattr(traj, 'azimuth_angles') and traj.azimuth_angles:
-                for slice_azimuth_angles in traj.azimuth_angles:
-                    if slice_azimuth_angles is not None:
-                        arr = np.array(slice_azimuth_angles).flatten()
-                        angle_data['true_azimuth'].extend(arr.tolist())
 
         # Collect from ROI trajectories if specified
         if config.get('rois') and self.roi_trajectories:
@@ -5483,6 +5729,7 @@ class VisualizationTab(QWidget):
         angle_data['tilt'] = np.array(angle_data['tilt']) if angle_data['tilt'] else None
         angle_data['azimuth'] = np.array(angle_data['azimuth']) if angle_data['azimuth'] else None
         angle_data['true_azimuth'] = np.array(angle_data['true_azimuth']) if angle_data['true_azimuth'] else None
+        angle_data['geometric'] = np.array(angle_data['geometric']) if angle_data['geometric'] else None
 
         return angle_data
 
@@ -5516,8 +5763,8 @@ class VisualizationTab(QWidget):
             # Build polydata from trajectories
             all_points = []
             all_lines = []
-            all_xz_angles = []      # X-Z Orientation (degrees)
-            all_yz_angles = []      # Y-Z Orientation (degrees)
+            all_xz_angles = []      # Tilt d0 (degrees)
+            all_yz_angles = []      # Tilt d1 (degrees)
             all_azimuth_angles = [] # True Azimuth (-180 to 180 degrees)
             all_fiber_ids = []
             point_offset = 0
@@ -5540,9 +5787,9 @@ class VisualizationTab(QWidget):
 
                 # Prefer fiber_trajectories (per-fiber data) over trajectories (per-slice data)
                 per_fiber_trajs = getattr(fiber_traj, 'fiber_trajectories', None)
-                per_fiber_angles = getattr(fiber_traj, 'fiber_angles', None)        # X-Z orientation
-                per_fiber_azimuths = getattr(fiber_traj, 'fiber_azimuths', None)    # Y-Z orientation
-                per_fiber_azimuth_angles = getattr(fiber_traj, 'fiber_azimuth_angles', None)  # True azimuth
+                per_fiber_tilt_xz = getattr(fiber_traj, 'fiber_tilt_xz', None)      # Tilt d0
+                per_fiber_tilt_yz = getattr(fiber_traj, 'fiber_tilt_yz', None)      # Tilt d1
+                per_fiber_azimuth = getattr(fiber_traj, 'fiber_azimuth', None)      # Azimuth
 
                 if per_fiber_trajs and len(per_fiber_trajs) > 0:
                     # Use per-fiber trajectory data (more accurate for variable-length trajectories)
@@ -5559,29 +5806,32 @@ class VisualizationTab(QWidget):
 
                         for pt_idx, (z, pt) in enumerate(traj):
                             # Coordinate mapping for VTP export:
-                            # Internal: pt[0]=X (column), pt[1]=Y (row), z=Z (slice)
-                            # VTP: Keep same coordinate system (X, Y, Z)
+                            # Internal: pt[0]=d0 (column), pt[1]=d1 (row), z=axial (slice)
+                            # VTP coordinate convention (same as VTI volume exports):
+                            #   - X = d0 (column coordinate, increases rightward)
+                            #   - Y = d1 (row coordinate, increases upward in visualization)
+                            #   - Z = axial (fiber direction, slice index)
                             fiber_points.append([
-                                pt[0] + x_offset,  # X = column
-                                pt[1] + y_offset,  # Y = row
-                                z + z_offset       # Z = slice index
+                                pt[0] + x_offset,  # X = d0 (column)
+                                pt[1] + y_offset,  # Y = d1 (row)
+                                z + z_offset       # Z = axial (slice index)
                             ])
 
-                            # Get X-Z orientation angle
-                            if per_fiber_angles and fiber_idx < len(per_fiber_angles) and pt_idx < len(per_fiber_angles[fiber_idx]):
-                                fiber_xz_list.append(per_fiber_angles[fiber_idx][pt_idx])
+                            # Get Tilt d0 angle
+                            if per_fiber_tilt_xz and fiber_idx < len(per_fiber_tilt_xz) and pt_idx < len(per_fiber_tilt_xz[fiber_idx]):
+                                fiber_xz_list.append(per_fiber_tilt_xz[fiber_idx][pt_idx])
                             else:
                                 fiber_xz_list.append(0.0)
 
-                            # Get Y-Z orientation angle
-                            if per_fiber_azimuths and fiber_idx < len(per_fiber_azimuths) and pt_idx < len(per_fiber_azimuths[fiber_idx]):
-                                fiber_yz_list.append(per_fiber_azimuths[fiber_idx][pt_idx])
+                            # Get Tilt d1 angle
+                            if per_fiber_tilt_yz and fiber_idx < len(per_fiber_tilt_yz) and pt_idx < len(per_fiber_tilt_yz[fiber_idx]):
+                                fiber_yz_list.append(per_fiber_tilt_yz[fiber_idx][pt_idx])
                             else:
                                 fiber_yz_list.append(0.0)
 
-                            # Get true azimuth angle (-180 to 180 degrees)
-                            if per_fiber_azimuth_angles and fiber_idx < len(per_fiber_azimuth_angles) and pt_idx < len(per_fiber_azimuth_angles[fiber_idx]):
-                                fiber_azimuth_list.append(per_fiber_azimuth_angles[fiber_idx][pt_idx])
+                            # Get azimuth angle (-180 to 180 degrees)
+                            if per_fiber_azimuth and fiber_idx < len(per_fiber_azimuth) and pt_idx < len(per_fiber_azimuth[fiber_idx]):
+                                fiber_azimuth_list.append(per_fiber_azimuth[fiber_idx][pt_idx])
                             else:
                                 fiber_azimuth_list.append(0.0)
 
@@ -5605,13 +5855,13 @@ class VisualizationTab(QWidget):
                 else:
                     # Fallback to slice-based trajectories data
                     trajectories = fiber_traj.trajectories
-                    angles = fiber_traj.angles if fiber_traj.angles else []           # X-Z orientation
-                    azimuths = getattr(fiber_traj, 'azimuths', None)                   # Y-Z orientation
-                    azimuth_angles = getattr(fiber_traj, 'azimuth_angles', None)       # True azimuth
-                    if azimuths is None:
-                        azimuths = []
-                    if azimuth_angles is None:
-                        azimuth_angles = []
+                    tilt_xz = fiber_traj.tilt_xz if fiber_traj.tilt_xz else []      # Tilt d0
+                    tilt_yz = getattr(fiber_traj, 'tilt_yz', None)                   # Tilt d1
+                    azimuth = getattr(fiber_traj, 'azimuth', None)                   # Azimuth
+                    if tilt_yz is None:
+                        tilt_yz = []
+                    if azimuth is None:
+                        azimuth = []
 
                     if not trajectories:
                         continue
@@ -5630,29 +5880,32 @@ class VisualizationTab(QWidget):
                             if fiber_idx < len(points):
                                 pt = points[fiber_idx]
                                 # Coordinate mapping for VTP export:
-                                # Internal: pt[0]=X (column), pt[1]=Y (row), z=Z (slice)
-                                # VTP: Keep same coordinate system (X, Y, Z)
+                                # Internal: pt[0]=d0 (column), pt[1]=d1 (row), z=axial (slice)
+                                # VTP coordinate convention (same as VTI volume exports):
+                                #   - X = d0 (column coordinate, increases rightward)
+                                #   - Y = d1 (row coordinate, increases upward in visualization)
+                                #   - Z = axial (fiber direction, slice index)
                                 fiber_points.append([
-                                    pt[0] + x_offset,  # X = column
-                                    pt[1] + y_offset,  # Y = row
-                                    z + z_offset       # Z = slice index
+                                    pt[0] + x_offset,  # X = d0 (column)
+                                    pt[1] + y_offset,  # Y = d1 (row)
+                                    z + z_offset       # Z = axial (slice index)
                                 ])
 
-                                # Get X-Z orientation angle
-                                if slice_idx < len(angles) and fiber_idx < len(angles[slice_idx]):
-                                    fiber_xz_list.append(angles[slice_idx][fiber_idx])
+                                # Get Tilt d0 angle
+                                if slice_idx < len(tilt_xz) and fiber_idx < len(tilt_xz[slice_idx]):
+                                    fiber_xz_list.append(tilt_xz[slice_idx][fiber_idx])
                                 else:
                                     fiber_xz_list.append(0.0)
 
-                                # Get Y-Z orientation angle
-                                if slice_idx < len(azimuths) and fiber_idx < len(azimuths[slice_idx]):
-                                    fiber_yz_list.append(azimuths[slice_idx][fiber_idx])
+                                # Get Tilt d1 angle
+                                if slice_idx < len(tilt_yz) and fiber_idx < len(tilt_yz[slice_idx]):
+                                    fiber_yz_list.append(tilt_yz[slice_idx][fiber_idx])
                                 else:
                                     fiber_yz_list.append(0.0)
 
                                 # Get true azimuth angle (-180 to 180 degrees)
-                                if slice_idx < len(azimuth_angles) and fiber_idx < len(azimuth_angles[slice_idx]):
-                                    fiber_azimuth_list.append(azimuth_angles[slice_idx][fiber_idx])
+                                if slice_idx < len(azimuth) and fiber_idx < len(azimuth[slice_idx]):
+                                    fiber_azimuth_list.append(azimuth[slice_idx][fiber_idx])
                                 else:
                                     fiber_azimuth_list.append(0.0)
 
@@ -5688,36 +5941,35 @@ class VisualizationTab(QWidget):
 
             if export_settings['export_xz']:
                 polydata.point_data['XZ_Orientation'] = np.array(all_xz_angles)
-                exported_arrays.append("XZ_Orientation: X-Z plane angle (degrees)")
+                exported_arrays.append("XZ_Orientation: Tilt d0 angle (degrees)")
 
             if export_settings['export_yz']:
                 polydata.point_data['YZ_Orientation'] = np.array(all_yz_angles)
-                exported_arrays.append("YZ_Orientation: Y-Z plane angle (degrees)")
+                exported_arrays.append("YZ_Orientation: Tilt d1 angle (degrees)")
 
             if export_settings['export_fiber_id']:
                 polydata.point_data['FiberID'] = np.array(all_fiber_ids)
                 exported_arrays.append("FiberID: Unique fiber identifier")
 
-            # Convert azimuth from -180~180 to 0~360 for cyclic colormap
+            # Azimuth in -180~180 range
             azimuth_arr = np.array(all_azimuth_angles)
-            azimuth_360 = np.where(azimuth_arr < 0, azimuth_arr + 360, azimuth_arr)
 
             if export_settings['export_azimuth']:
-                polydata.point_data['Azimuth'] = azimuth_360
-                exported_arrays.append("Azimuth: True azimuth (0° to 360°, cyclic)")
+                polydata.point_data['Azimuth'] = azimuth_arr
+                exported_arrays.append("Azimuth: True azimuth (-180° to 180°, cyclic)")
 
             if export_settings['export_azimuth_norm']:
-                # Normalize to 0-1 for direct use as Hue
-                azimuth_normalized = azimuth_360 / 360.0
+                # Normalize -180~180 to 0-1 for direct use as Hue
+                azimuth_normalized = (azimuth_arr + 180.0) / 360.0
                 polydata.point_data['Azimuth_Normalized'] = azimuth_normalized
-                exported_arrays.append("Azimuth_Normalized: Azimuth/360 (0-1, for Hue)")
+                exported_arrays.append("Azimuth_Normalized: (Azimuth+180)/360 (0-1, for Hue)")
 
             # HSV to RGB conversion for pre-rendered color
-            # Saturation = Tilt angle (XZ_Orientation) normalized to 0-1
+            # Saturation = Tilt d0 angle normalized to 0-1
             if export_settings.get('export_rgb', False):
                 from matplotlib.colors import hsv_to_rgb
 
-                # Use XZ_Orientation (tilt angle) as saturation
+                # Use Tilt d0 angle as saturation
                 xz_arr = np.array(all_xz_angles)
                 tilt_abs = np.abs(xz_arr)
                 # Use saturation range from settings
@@ -5726,10 +5978,10 @@ class VisualizationTab(QWidget):
                 sat_range = sat_max - sat_min if sat_max > sat_min else 1.0
                 saturation_values = np.clip((tilt_abs - sat_min) / sat_range, 0, 1)
 
-                # Build HSV array: H=azimuth, S=tilt, V=1.0
-                n_points = len(azimuth_360)
+                # Build HSV array: H=azimuth (-180~180 mapped to 0~1), S=tilt, V=1.0
+                n_points = len(azimuth_arr)
                 hsv = np.zeros((n_points, 3))
-                hsv[:, 0] = azimuth_360 / 360.0  # Hue (0-1)
+                hsv[:, 0] = (azimuth_arr + 180.0) / 360.0  # Hue (0-1, maps -180~180)
                 hsv[:, 1] = saturation_values     # Saturation based on tilt
                 hsv[:, 2] = 1.0                   # Value (brightness)
 
@@ -5742,6 +5994,23 @@ class VisualizationTab(QWidget):
 
             # Save to file
             polydata.save(filename)
+
+            # Export phase wheel SVG if requested
+            phase_wheel_path = None
+            if export_settings.get('export_phase_wheel', False):
+                from vmm.phase_wheel import create_phase_wheel
+                import os
+                base_path = os.path.splitext(filename)[0]
+                phase_wheel_path = base_path + "_phase_wheel.svg"
+                sat_min = self.trajectory_settings.get('saturation_min', 0.0)
+                sat_max = self.trajectory_settings.get('saturation_max', 45.0)
+                create_phase_wheel(
+                    output_path=phase_wheel_path,
+                    saturation_max=sat_max,
+                    saturation_min=sat_min,
+                    show=False
+                )
+                exported_arrays.append(f"Phase Wheel: {os.path.basename(phase_wheel_path)}")
 
             arrays_str = "\n".join(f"- {a}" for a in exported_arrays)
 
@@ -5783,6 +6052,13 @@ class AnalysisTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Initialize orientation settings
+        self.orientation_settings = {
+            'noise_scale': 10,
+            'use_average_reference': False,
+            'exclude_voids': True
+        }
+
         # Initialize fiber detection settings (watershed-based)
         self.fiber_detection_settings = {
             'min_diameter': 5.0,
@@ -5795,7 +6071,7 @@ class AnalysisTab(QWidget):
 
         # InSegt settings (separate)
         self.insegt_settings = {
-            'scale': 0.5,
+            'scale': 1.0,
             'sigmas': [1, 2],
             'patch_size': 9,
             'branching_factor': 5,
@@ -5806,7 +6082,7 @@ class AnalysisTab(QWidget):
         # InSegt model storage
         self.insegt_model = None
         self.insegt_labels = None
-        self._insegt_scale = 0.5  # Store scale used during labeling
+        self._insegt_scale = 1.0  # Store scale used during labeling
         self._insegt_labels_ready = False  # Flag to enable Run button
 
         # Vf (Volume Fraction) settings
@@ -5842,6 +6118,15 @@ class AnalysisTab(QWidget):
         self.void_mask = None
         self.void_statistics = None
         self.void_local_fraction = None
+
+    def openOrientationSettings(self):
+        """Open orientation settings dialog"""
+        main_window = getattr(self, 'main_window', None)
+        void_available = (main_window is not None and
+                         main_window.viewer.void_mask is not None)
+        dialog = OrientationSettingsDialog(self, self.orientation_settings, void_available)
+        if dialog.exec() == QDialog.Accepted:
+            self.orientation_settings = dialog.getSettings()
 
     def openFiberDetectionSettings(self):
         """Open fiber detection settings dialog"""
@@ -5907,6 +6192,20 @@ class AnalysisTab(QWidget):
             # Check if watershed display is enabled
             show_watershed = self.fiber_detection_settings.get('show_watershed', True)
 
+            # Check if void mask is available and should be used for exclusion
+            void_mask_3d = None
+            exclude_voids = self.fiber_detection_settings.get('exclude_voids', True)
+            if exclude_voids and main_window.viewer.void_mask is not None:
+                void_roi_bounds = main_window.viewer.void_roi_bounds
+                if void_roi_bounds is not None:
+                    vz_min, vz_max, vy_min, vy_max, vx_min, vx_max = void_roi_bounds
+                    # Check if void ROI overlaps with detection ROI
+                    if (vz_min < z_max and vz_max > z_min and
+                        vy_min < y_max and vy_max > y_min and
+                        vx_min < x_max and vx_max > x_min):
+                        void_mask_3d = main_window.viewer.void_mask
+                        print(f"Using void mask for fiber detection exclusion")
+
             # Detect fiber centers in all slices
             all_slice_results = {}
             all_segmentation_labels = {}  # Store labels separately for Vf calculation
@@ -5923,11 +6222,40 @@ class AnalysisTab(QWidget):
                 # Extract the slice from ROI
                 slice_image = main_window.current_volume[z, y_min:y_max, x_min:x_max].copy()
 
+                # Build valid_mask: start with all True, then exclude polygon outside and voids
+                valid_mask = np.ones(slice_image.shape, dtype=bool)
+
                 # Apply polygon mask if available
                 if polygon_mask_3d is not None:
                     slice_mask = polygon_mask_3d[i]
                     # Set pixels outside polygon to 0 (background)
                     slice_image[~slice_mask] = 0
+                    valid_mask &= slice_mask
+
+                # Apply void mask if available
+                if void_mask_3d is not None:
+                    vz_min, vz_max, vy_min, vy_max, vx_min, vx_max = void_roi_bounds
+                    # Check if this z slice is within void mask range
+                    if vz_min <= z < vz_max:
+                        void_z_idx = z - vz_min
+                        # Calculate overlap region in detection ROI coordinates
+                        # Detection ROI: [y_min:y_max, x_min:x_max]
+                        # Void ROI: [vy_min:vy_max, vx_min:vx_max]
+                        oy_start = max(0, vy_min - y_min)
+                        oy_end = min(y_max - y_min, vy_max - y_min)
+                        ox_start = max(0, vx_min - x_min)
+                        ox_end = min(x_max - x_min, vx_max - x_min)
+
+                        # Corresponding indices in void mask
+                        vy_start = max(0, y_min - vy_min)
+                        vy_end = vy_start + (oy_end - oy_start)
+                        vx_start = max(0, x_min - vx_min)
+                        vx_end = vx_start + (ox_end - ox_start)
+
+                        if oy_start < oy_end and ox_start < ox_end:
+                            void_slice = void_mask_3d[void_z_idx, vy_start:vy_end, vx_start:vx_end]
+                            # Exclude void regions from valid_mask
+                            valid_mask[oy_start:oy_end, ox_start:ox_end] &= ~void_slice
 
                 # Determine threshold percentile (None for Otsu)
                 threshold_method = self.fiber_detection_settings.get('threshold_method', 'otsu')
@@ -5941,6 +6269,7 @@ class AnalysisTab(QWidget):
                     min_diameter=self.fiber_detection_settings['min_diameter'],
                     max_diameter=self.fiber_detection_settings['max_diameter'],
                     min_distance=self.fiber_detection_settings['min_distance'],
+                    valid_mask=valid_mask,
                     return_labels=True,
                     threshold_percentile=threshold_percentile
                 )
@@ -6634,30 +6963,6 @@ class AnalysisTab(QWidget):
                 if hasattr(main_window, 'compute_btn'):
                     main_window.compute_btn.setEnabled(True)
 
-    def toggleMagnify(self, checked):
-        """Toggle magnify/zoom mode for slice viewers"""
-        main_window = getattr(self, 'main_window', None)
-
-        if not main_window:
-            print("No main window reference")
-            return
-
-        if not main_window.viewer:
-            return
-
-        if checked:
-            # Enable zoom mode
-            main_window.viewer.enableZoom(True)
-            if hasattr(main_window, 'magnify_btn'):
-                main_window.magnify_btn.setText("Reset\nZoom")
-            main_window.status_label.setText("Magnify mode: Use mouse wheel to zoom, drag to pan")
-        else:
-            # Disable zoom mode and reset view
-            main_window.viewer.enableZoom(False)
-            if hasattr(main_window, 'magnify_btn'):
-                main_window.magnify_btn.setText("Magnify")
-            main_window.status_label.setText("Zoom reset")
-
     def computeOrientation(self):
         """Compute 3 types of orientation analysis"""
         # Use direct reference to main window
@@ -6717,7 +7022,10 @@ class AnalysisTab(QWidget):
             roi_name: Name of the ROI (or None for entire volume)
             polygon_mask_3d: Optional 3D polygon mask (True inside polygon)
         """
-        noise_scale = main_window.noise_scale_slider.value()
+        # Get settings from orientation_settings
+        noise_scale = self.orientation_settings.get('noise_scale', 10)
+        use_average_reference = self.orientation_settings.get('use_average_reference', False)
+        exclude_voids = self.orientation_settings.get('exclude_voids', True)
 
         main_window.showProgress(True)
         main_window.progress_bar.setRange(0, 3)
@@ -6731,54 +7039,102 @@ class AnalysisTab(QWidget):
 
             structure_tensor = compute_structure_tensor(volume, noise_scale=noise_scale)
 
-            # Step 2: Compute orientation without reference (theta, phi)
+            # Step 2: Compute orientation without reference (tilt_d0, tilt_d1)
             main_window.progress_bar.setValue(2)
             main_window.progress_bar.setFormat(f"Computing orientation angles{roi_label}... (2/3)")
             QApplication.processEvents()
 
             # Use the working compute_orientation function
-            theta, phi = compute_orientation(structure_tensor)
+            tilt_d0, tilt_d1 = compute_orientation(structure_tensor)
 
             # Step 3: Compute reference orientation and trim edges
             main_window.progress_bar.setValue(3)
             main_window.progress_bar.setFormat(f"Computing reference orientation{roi_label}... (3/3)")
             QApplication.processEvents()
 
-            # Reference vector is always Z-axis (fibers assumed to be aligned along Z direction)
-            reference_vector = [1, 0, 0]  # Z-axis
-
-            # Compute reference orientation using proper VMM-FRC method
-            reference_orientation = compute_orientation(structure_tensor, reference_vector)
+            # Determine reference vector based on settings
+            avg_ref_vector = None
+            if use_average_reference:
+                # Use average fiber direction as reference
+                reference_orientation, avg_ref_vector = compute_orientation(structure_tensor, "average")
+            else:
+                # Reference vector is always axial direction (fibers assumed to be aligned along axial)
+                reference_vector = [1, 0, 0]  # Axial direction
+                reference_orientation = compute_orientation(structure_tensor, reference_vector)
 
             # Trim edges from all orientation volumes using noise_scale as trim width
             trim_width = noise_scale
-            theta_trimmed = drop_edges_3D(trim_width, theta)
-            phi_trimmed = drop_edges_3D(trim_width, phi)
+            tilt_d0_trimmed = drop_edges_3D(trim_width, tilt_d0)
+            tilt_d1_trimmed = drop_edges_3D(trim_width, tilt_d1)
             reference_trimmed = drop_edges_3D(trim_width, reference_orientation)
 
             # Apply polygon mask if available (set values outside polygon to NaN)
             if polygon_mask_3d is not None:
                 # Trim the mask to match the trimmed orientation data
                 mask_trimmed = polygon_mask_3d[trim_width:-trim_width, trim_width:-trim_width, trim_width:-trim_width]
-                theta_trimmed = np.where(mask_trimmed, theta_trimmed, np.nan)
-                phi_trimmed = np.where(mask_trimmed, phi_trimmed, np.nan)
+                tilt_d0_trimmed = np.where(mask_trimmed, tilt_d0_trimmed, np.nan)
+                tilt_d1_trimmed = np.where(mask_trimmed, tilt_d1_trimmed, np.nan)
                 reference_trimmed = np.where(mask_trimmed, reference_trimmed, np.nan)
+
+            # Apply void mask if exclude_voids is enabled
+            if exclude_voids and main_window.viewer.void_mask is not None:
+                void_roi_bounds = main_window.viewer.void_roi_bounds
+                if void_roi_bounds is not None:
+                    # Get ROI bounds for current computation
+                    if roi_name and roi_name in main_window.viewer.rois:
+                        roi_bounds = main_window.viewer.rois[roi_name].get('bounds')
+                    else:
+                        roi_bounds = None
+
+                    if roi_bounds is not None:
+                        # Apply void mask to trimmed orientation data
+                        z_min, z_max, y_min, y_max, x_min, x_max = roi_bounds
+                        vz_min, vz_max, vy_min, vy_max, vx_min, vx_max = void_roi_bounds
+
+                        # Calculate overlap and apply void mask
+                        # Trimmed data coordinates are relative to ROI with trim_width offset
+                        trimmed_shape = tilt_d0_trimmed.shape
+                        void_mask_aligned = np.zeros(trimmed_shape, dtype=bool)
+
+                        # Map void mask to trimmed orientation coordinates
+                        for tz in range(trimmed_shape[0]):
+                            global_z = z_min + trim_width + tz
+                            if vz_min <= global_z < vz_max:
+                                void_z = global_z - vz_min
+                                for ty in range(trimmed_shape[1]):
+                                    global_y = y_min + trim_width + ty
+                                    if vy_min <= global_y < vy_max:
+                                        void_y = global_y - vy_min
+                                        for tx in range(trimmed_shape[2]):
+                                            global_x = x_min + trim_width + tx
+                                            if vx_min <= global_x < vx_max:
+                                                void_x = global_x - vx_min
+                                                if main_window.viewer.void_mask[void_z, void_y, void_x]:
+                                                    void_mask_aligned[tz, ty, tx] = True
+
+                        # Set void regions to NaN
+                        tilt_d0_trimmed = np.where(~void_mask_aligned, tilt_d0_trimmed, np.nan)
+                        tilt_d1_trimmed = np.where(~void_mask_aligned, tilt_d1_trimmed, np.nan)
+                        reference_trimmed = np.where(~void_mask_aligned, reference_trimmed, np.nan)
 
             # Initialize orientation_data if None (e.g., after Reset All)
             if main_window.orientation_data is None:
                 main_window.orientation_data = {}
 
             # Store trimmed orientation data and trim information
-            main_window.orientation_data['theta'] = theta_trimmed
-            main_window.orientation_data['phi'] = phi_trimmed
+            main_window.orientation_data['tilt_d0'] = tilt_d0_trimmed
+            main_window.orientation_data['tilt_d1'] = tilt_d1_trimmed
             main_window.orientation_data['reference'] = reference_trimmed
             main_window.orientation_data['trim_width'] = trim_width
             main_window.orientation_data['structure_tensor'] = structure_tensor
             main_window.orientation_data['noise_scale'] = noise_scale
             main_window.orientation_data['roi_name'] = roi_name  # Store which ROI this data is for
+            main_window.orientation_data['use_average_reference'] = use_average_reference
+            main_window.orientation_data['avg_ref_vector'] = avg_ref_vector  # None if fixed reference
 
             main_window.showProgress(False)
-            main_window.status_label.setText(f"Analysis complete{roi_label} (Noise scale: {noise_scale})")
+            ref_mode = "avg ref" if use_average_reference else "fixed ref"
+            main_window.status_label.setText(f"Analysis complete{roi_label} (Noise scale: {noise_scale}, {ref_mode})")
 
             # Enable edit range and histogram buttons in MainWindow's ribbon
             if hasattr(main_window, 'edit_range_btn'):
@@ -6800,8 +7156,8 @@ class AnalysisTab(QWidget):
 
             # Store orientation data in the ROI structure
             if roi_name and roi_name in main_window.viewer.rois:
-                main_window.viewer.rois[roi_name]['theta'] = theta_trimmed.astype(np.float32)
-                main_window.viewer.rois[roi_name]['phi'] = phi_trimmed.astype(np.float32)
+                main_window.viewer.rois[roi_name]['tilt_d0'] = tilt_d0_trimmed.astype(np.float32)
+                main_window.viewer.rois[roi_name]['tilt_d1'] = tilt_d1_trimmed.astype(np.float32)
                 main_window.viewer.rois[roi_name]['angle'] = reference_trimmed.astype(np.float32)
                 main_window.viewer.rois[roi_name]['trim_width'] = trim_width  # Store trim width for centering
 
@@ -6847,7 +7203,7 @@ class AnalysisTab(QWidget):
             return
 
         orientation_data = main_window.orientation_data
-        if not orientation_data or 'theta' not in orientation_data:
+        if not orientation_data or 'tilt_d0' not in orientation_data:
             QMessageBox.warning(self, "No Data", "No orientation data available.\nPlease compute orientation first.")
             return
 
@@ -6905,32 +7261,40 @@ class AnalysisTab(QWidget):
             filename += '.vti'
 
         try:
-            theta = orientation_data['theta']
-            phi = orientation_data['phi']
+            tilt_d0 = orientation_data['tilt_d0']
+            tilt_d1 = orientation_data['tilt_d1']
             reference = orientation_data.get('reference', None)
+            noise_scale = orientation_data.get('noise_scale', 0)
 
-            # Transpose from (Z, Y, X) to (X, Y, Z) for VTK coordinate system
-            # This matches the fiber trajectory VTP export coordinate system
-            theta_vtk = np.transpose(theta, (2, 1, 0))
-            phi_vtk = np.transpose(phi, (2, 1, 0))
+            # Transpose from internal (axial, d1, d0) to VTK (d0, d1, axial) = (X, Y, Z)
+            # VTK coordinate convention:
+            #   - X-axis = d0 (column coordinate, increases rightward)
+            #   - Y-axis = d1 (row coordinate, increases upward in visualization)
+            #   - Z-axis = axial (fiber direction, slice index)
+            tilt_d0_vtk = np.transpose(tilt_d0, (2, 1, 0))
+            tilt_d1_vtk = np.transpose(tilt_d1, (2, 1, 0))
             if reference is not None:
                 reference_vtk = np.transpose(reference, (2, 1, 0))
 
             # Create VTK ImageData (uniform grid)
             grid = pv.ImageData()
-            grid.dimensions = np.array(theta_vtk.shape) + 1  # VTK needs n+1 for cell data
+            grid.dimensions = np.array(tilt_d0_vtk.shape) + 1  # VTK needs n+1 for cell data
             grid.spacing = (1, 1, 1)
+            # Set origin offset to align with CT volume center
+            # Structure tensor computation cuts edges by noise_scale pixels on each side
+            # Origin offset in VTK coordinates: (X, Y, Z) = (d0, d1, axial)
+            grid.origin = (noise_scale, noise_scale, noise_scale)
 
             exported_fields = []
 
             # Add selected scalar arrays
             if theta_check.isChecked():
-                grid.cell_data['Theta'] = theta_vtk.flatten(order='F')
-                exported_fields.append("Theta (Azimuthal angle)")
+                grid.cell_data['Tilt_d0'] = tilt_d0_vtk.flatten(order='F')
+                exported_fields.append("Tilt_d0 (Tilt angle in d0-axial plane)")
 
             if phi_check.isChecked():
-                grid.cell_data['Phi'] = phi_vtk.flatten(order='F')
-                exported_fields.append("Phi (Elevation angle)")
+                grid.cell_data['Tilt_d1'] = tilt_d1_vtk.flatten(order='F')
+                exported_fields.append("Tilt_d1 (Tilt angle in d1-axial plane)")
 
             if reference_check.isChecked() and reference is not None:
                 grid.cell_data['Reference'] = reference_vtk.flatten(order='F')
@@ -6939,10 +7303,12 @@ class AnalysisTab(QWidget):
             grid.save(filename)
 
             fields_str = "\n".join(f"- {f}" for f in exported_fields)
+            offset_msg = f"Origin offset: ({noise_scale}, {noise_scale}, {noise_scale})\n" if noise_scale > 0 else ""
             QMessageBox.information(
                 self, "Export Successful",
                 f"Orientation volume exported to:\n{filename}\n\n"
-                f"Volume shape: {theta.shape}\n\n"
+                f"Volume shape: {tilt_d0.shape}\n"
+                f"{offset_msg}\n"
                 f"Exported fields:\n{fields_str}"
             )
 
@@ -6973,8 +7339,11 @@ class AnalysisTab(QWidget):
         try:
             vf_map = self.vf_map
 
-            # Transpose from (Z, Y, X) to (X, Y, Z) for VTK coordinate system
-            # This matches the fiber trajectory VTP export coordinate system
+            # Transpose from internal (axial, d1, d0) to VTK (d0, d1, axial) = (X, Y, Z)
+            # VTK coordinate convention:
+            #   - X-axis = d0 (column coordinate, increases rightward)
+            #   - Y-axis = d1 (row coordinate, increases upward in visualization)
+            #   - Z-axis = axial (fiber direction, slice index)
             vf_map_vtk = np.transpose(vf_map, (2, 1, 0))
 
             # Create VTK ImageData
@@ -7006,6 +7375,71 @@ class AnalysisTab(QWidget):
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, "Export Error", f"Failed to export: {str(e)}")
+
+    def exportVoidToVTK(self):
+        """Export void regions as closed surface mesh to VTK format."""
+        from vmm.io import export_void_to_vtk
+
+        main_window = getattr(self, 'main_window', None)
+        if not main_window:
+            QMessageBox.warning(self, "No Data", "No main window reference.")
+            return
+
+        if main_window.viewer.void_mask is None:
+            QMessageBox.warning(self, "No Data", "No void mask available.\nPlease run void analysis first.")
+            return
+
+        # Get save filename
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Void Surface", "",
+            "VTK PolyData (*.vtp);;Legacy VTK (*.vtk);;All Files (*)"
+        )
+        if not filename:
+            return
+
+        if not filename.lower().endswith(('.vtp', '.vtk')):
+            filename += '.vtp'
+
+        try:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+
+            void_mask = main_window.viewer.void_mask
+            roi_bounds = main_window.viewer.void_roi_bounds
+            polygon_mask = main_window.viewer.void_polygon_mask
+
+            stats = export_void_to_vtk(
+                filename,
+                void_mask,
+                roi_bounds=roi_bounds,
+                polygon_mask=polygon_mask
+            )
+
+            QApplication.restoreOverrideCursor()
+
+            if stats['n_vertices'] == 0:
+                QMessageBox.warning(
+                    self, "Export Warning",
+                    "No void regions found in the mask.\n"
+                    "The exported file is empty."
+                )
+            else:
+                void_fraction = np.mean(void_mask) * 100
+                QMessageBox.information(
+                    self, "Export Successful",
+                    f"Void surface exported to:\n{filename}\n\n"
+                    f"Mesh statistics:\n"
+                    f"- Vertices: {stats['n_vertices']:,}\n"
+                    f"- Faces: {stats['n_faces']:,}\n"
+                    f"- Volume: {stats['volume']:.1f} voxels³\n"
+                    f"- Surface area: {stats['surface_area']:.1f} voxels²\n\n"
+                    f"Void fraction: {void_fraction:.2f}%"
+                )
+
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Export Error", f"Failed to export void surface: {str(e)}")
 
     def openVoidSettings(self):
         """Open void analysis settings dialog."""
@@ -7049,6 +7483,8 @@ class AnalysisTab(QWidget):
             return
 
         # Show ROI selection dialog (optional - use Full Volume if no ROI)
+        polygon_mask_3d = None
+        roi_name = None
         if main_window.viewer.rois:
             dialog = ROISelectDialog(
                 main_window, main_window.viewer.rois,
@@ -7068,6 +7504,8 @@ class AnalysisTab(QWidget):
                 y_start, y_end = roi_bounds[2], roi_bounds[3]
                 x_start, x_end = roi_bounds[4], roi_bounds[5]
                 volume = main_window.current_volume[z_start:z_end, y_start:y_end, x_start:x_end]
+                # Get polygon mask if ROI has polygon vertices
+                polygon_mask_3d = main_window.viewer.getROIPolygonMask3D(roi_name)
             else:
                 # Use full volume
                 volume = main_window.current_volume
@@ -7134,18 +7572,26 @@ class AnalysisTab(QWidget):
                 vol_shape = main_window.current_volume.shape
                 void_roi_bounds = [0, vol_shape[0], 0, vol_shape[1], 0, vol_shape[2]]
 
-            # For InSegt method, use the stored segmentation ROI bounds
+            # For InSegt method, use the stored segmentation ROI bounds and polygon mask
             if method == 'insegt' and hasattr(self, 'segmentation_roi_bounds') and self.segmentation_roi_bounds is not None:
                 void_roi_bounds = self.segmentation_roi_bounds
+                # Use stored polygon mask from segmentation if available
+                if hasattr(self, 'segmentation_polygon_mask') and self.segmentation_polygon_mask is not None:
+                    polygon_mask_3d = self.segmentation_polygon_mask
 
             main_window.viewer.void_mask = void_mask
             main_window.viewer.void_roi_bounds = void_roi_bounds
+            main_window.viewer.void_polygon_mask = polygon_mask_3d
             main_window.viewer.show_void_overlay = True
             main_window.viewer.renderVolume()
 
             # Add void toggle to pipeline panel
             if hasattr(main_window, 'addVoidToggle'):
                 main_window.addVoidToggle()
+
+            # Enable void export button
+            if hasattr(main_window, 'export_void_btn'):
+                main_window.export_void_btn.setEnabled(True)
 
             # Compute statistics if requested
             if self.void_analysis_settings.get('compute_statistics', True):
@@ -7189,45 +7635,7 @@ class AnalysisTab(QWidget):
             result_text += f"Max Void Size: {stats['max_void_size']:.0f} voxels\n"
             result_text += f"Mean Sphericity: {stats['mean_sphericity']:.3f}\n"
 
-        # Show histogram of void sizes if available
-        if self.void_statistics and len(self.void_statistics.get('void_sizes', [])) > 0:
-            # Create a dialog with histogram
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Void Analysis Results")
-            dialog.setMinimumSize(600, 500)
-
-            layout = QVBoxLayout(dialog)
-
-            # Text results
-            text_label = QLabel(result_text)
-            text_label.setStyleSheet("font-family: monospace;")
-            layout.addWidget(text_label)
-
-            # Histogram
-            fig = Figure(figsize=(6, 4))
-            canvas = FigureCanvas(fig)
-            ax = fig.add_subplot(111)
-
-            sizes = self.void_statistics['void_sizes']
-            ax.hist(sizes, bins=50, edgecolor='black', alpha=0.7)
-            ax.set_xlabel('Void Size (voxels)')
-            ax.set_ylabel('Count')
-            ax.set_title('Void Size Distribution')
-            if len(sizes) > 0 and np.min(sizes) > 0:
-                ax.set_xscale('log')
-
-            fig.tight_layout()
-            layout.addWidget(canvas)
-
-            # Close button
-            close_btn = QPushButton("Close")
-            close_btn.clicked.connect(dialog.accept)
-            layout.addWidget(close_btn)
-
-            dialog.exec()
-        else:
-            # Simple message box
-            QMessageBox.information(self, "Void Analysis Results", result_text)
+        QMessageBox.information(self, "Void Analysis Results", result_text)
 
     def cropOrientationWithVoid(self):
         """Crop orientation data using void mask."""
@@ -7242,7 +7650,7 @@ class AnalysisTab(QWidget):
         orientation_available = (
             hasattr(main_window, 'orientation_data') and
             main_window.orientation_data is not None and
-            main_window.orientation_data.get('theta') is not None
+            main_window.orientation_data.get('tilt_d0') is not None
         )
 
         # Check for void mask
@@ -7265,74 +7673,74 @@ class AnalysisTab(QWidget):
             QApplication.setOverrideCursor(Qt.WaitCursor)
 
             # Get orientation data from orientation_data dict
-            theta = main_window.orientation_data['theta']
-            phi = main_window.orientation_data.get('phi', None)
+            tilt_d0 = main_window.orientation_data['tilt_d0']
+            tilt_d1 = main_window.orientation_data.get('tilt_d1', None)
 
             # Get void mask and align with orientation data
             void_mask = self.void_mask
             void_roi_bounds = getattr(self, 'segmentation_roi_bounds', None)
 
             # Debug: print shapes and bounds
-            print(f"[Crop Orientation] Theta shape: {theta.shape}")
+            print(f"[Crop Orientation] tilt_d0 shape: {tilt_d0.shape}")
             print(f"[Crop Orientation] Void mask shape: {void_mask.shape}")
             print(f"[Crop Orientation] Void mask has voids: {np.any(void_mask)} (count: {np.sum(void_mask)})")
             print(f"[Crop Orientation] Void ROI bounds: {void_roi_bounds}")
 
             # If we have ROI bounds for void, we need to create aligned mask
             if void_roi_bounds is not None:
-                # void_roi_bounds is in volume coordinates: [z_min, z_max, y_min, y_max, x_min, x_max]
+                # void_roi_bounds is in volume coordinates: [axial_min, axial_max, d1_min, d1_max, d0_min, d0_max]
                 # void_mask shape matches the ROI size from void_roi_bounds
-                # theta is already trimmed (has trim_width removed from edges)
+                # tilt_d0 is already trimmed (has trim_width removed from edges)
 
-                # Calculate the size difference (trim_width applied to theta)
+                # Calculate the size difference (trim_width applied to tilt_d0)
                 void_size = void_mask.shape  # e.g., (30, 112, 127) - original ROI size
-                theta_size = theta.shape     # e.g., (10, 92, 107) - trimmed ROI size
+                tilt_size = tilt_d0.shape    # e.g., (10, 92, 107) - trimmed ROI size
 
-                # Calculate trim amounts (theta is smaller due to edge trimming)
-                z_trim = (void_size[0] - theta_size[0]) // 2
-                y_trim = (void_size[1] - theta_size[1]) // 2
-                x_trim = (void_size[2] - theta_size[2]) // 2
+                # Calculate trim amounts (tilt_d0 is smaller due to edge trimming)
+                a_trim = (void_size[0] - tilt_size[0]) // 2
+                d1_trim = (void_size[1] - tilt_size[1]) // 2
+                d0_trim = (void_size[2] - tilt_size[2]) // 2
 
-                print(f"[Crop Orientation] Trim amounts: z={z_trim}, y={y_trim}, x={x_trim}")
+                print(f"[Crop Orientation] Trim amounts: axial={a_trim}, d1={d1_trim}, d0={d0_trim}")
 
-                # Extract the central region of void_mask that matches theta
-                z_start = max(0, z_trim)
-                z_end = z_start + theta_size[0]
-                y_start = max(0, y_trim)
-                y_end = y_start + theta_size[1]
-                x_start = max(0, x_trim)
-                x_end = x_start + theta_size[2]
+                # Extract the central region of void_mask that matches tilt_d0
+                a_start = max(0, a_trim)
+                a_end = a_start + tilt_size[0]
+                d1_start = max(0, d1_trim)
+                d1_end = d1_start + tilt_size[1]
+                d0_start = max(0, d0_trim)
+                d0_end = d0_start + tilt_size[2]
 
                 # Ensure we don't exceed void_mask bounds
-                z_end = min(z_end, void_size[0])
-                y_end = min(y_end, void_size[1])
-                x_end = min(x_end, void_size[2])
+                a_end = min(a_end, void_size[0])
+                d1_end = min(d1_end, void_size[1])
+                d0_end = min(d0_end, void_size[2])
 
                 # Extract aligned void mask
-                void_mask_aligned = void_mask[z_start:z_end, y_start:y_end, x_start:x_end].copy()
+                void_mask_aligned = void_mask[a_start:a_end, d1_start:d1_end, d0_start:d0_end].copy()
 
-                print(f"[Crop Orientation] Extracted void mask region [{z_start}:{z_end}, {y_start}:{y_end}, {x_start}:{x_end}]")
+                print(f"[Crop Orientation] Extracted void mask region [{a_start}:{a_end}, {d1_start}:{d1_end}, {d0_start}:{d0_end}]")
                 print(f"[Crop Orientation] Aligned void mask shape: {void_mask_aligned.shape}")
                 print(f"[Crop Orientation] Aligned void mask has voids: {np.any(void_mask_aligned)} (count: {np.sum(void_mask_aligned)})")
 
                 # If shapes still don't match, create padded/cropped mask
-                if void_mask_aligned.shape != theta.shape:
-                    print(f"[Crop Orientation] Shape mismatch, adjusting mask to theta shape")
-                    full_void_mask = np.zeros(theta.shape, dtype=bool)
+                if void_mask_aligned.shape != tilt_d0.shape:
+                    print(f"[Crop Orientation] Shape mismatch, adjusting mask to tilt_d0 shape")
+                    full_void_mask = np.zeros(tilt_d0.shape, dtype=bool)
                     # Copy what we can
-                    copy_z = min(void_mask_aligned.shape[0], theta.shape[0])
-                    copy_y = min(void_mask_aligned.shape[1], theta.shape[1])
-                    copy_x = min(void_mask_aligned.shape[2], theta.shape[2])
-                    full_void_mask[:copy_z, :copy_y, :copy_x] = void_mask_aligned[:copy_z, :copy_y, :copy_x]
+                    copy_a = min(void_mask_aligned.shape[0], tilt_d0.shape[0])
+                    copy_d1 = min(void_mask_aligned.shape[1], tilt_d0.shape[1])
+                    copy_d0 = min(void_mask_aligned.shape[2], tilt_d0.shape[2])
+                    full_void_mask[:copy_a, :copy_d1, :copy_d0] = void_mask_aligned[:copy_a, :copy_d1, :copy_d0]
                     void_mask_aligned = full_void_mask
                     print(f"[Crop Orientation] Final aligned mask has voids: {np.any(void_mask_aligned)} (count: {np.sum(void_mask_aligned)})")
             else:
                 # Assume void mask is same size as orientation
-                if void_mask.shape != theta.shape:
+                if void_mask.shape != tilt_d0.shape:
                     QMessageBox.warning(
                         self, "Warning",
                         f"Void mask shape {void_mask.shape} does not match "
-                        f"orientation shape {theta.shape}."
+                        f"orientation shape {tilt_d0.shape}."
                     )
                     QApplication.restoreOverrideCursor()
                     return
@@ -7349,46 +7757,46 @@ class AnalysisTab(QWidget):
                 return
 
             # Apply masking
-            if phi is not None:
-                masked_theta, masked_phi = mask_orientation_with_voids(
-                    theta, void_mask_aligned, dilation_pixels, phi
+            if tilt_d1 is not None:
+                masked_tilt_d0, masked_tilt_d1 = mask_orientation_with_voids(
+                    tilt_d0, void_mask_aligned, dilation_pixels, tilt_d1
                 )
-                main_window.orientation_phi = masked_phi
+                main_window.orientation_tilt_d1 = masked_tilt_d1
             else:
-                masked_theta = mask_orientation_with_voids(
-                    theta, void_mask_aligned, dilation_pixels
+                masked_tilt_d0 = mask_orientation_with_voids(
+                    tilt_d0, void_mask_aligned, dilation_pixels
                 )
 
             # Store masked orientation in orientation_data dict
-            main_window.orientation_data['theta'] = masked_theta
-            if phi is not None:
-                main_window.orientation_data['phi'] = masked_phi
+            main_window.orientation_data['tilt_d0'] = masked_tilt_d0
+            if tilt_d1 is not None:
+                main_window.orientation_data['tilt_d1'] = masked_tilt_d1
 
             # Update ROI orientation data with masking applied
-            # The masked_theta is already in ROI-local coordinates (same size as ROI theta)
+            # The masked_tilt_d0 is already in ROI-local coordinates (same size as ROI tilt_d0)
             rois_updated = 0
             if hasattr(main_window, 'viewer') and hasattr(main_window.viewer, 'rois'):
                 for roi_name, roi_data in main_window.viewer.rois.items():
-                    if 'theta' in roi_data and roi_data['theta'] is not None:
-                        print(f"[Crop Orientation] ROI '{roi_name}' theta shape: {roi_data['theta'].shape}")
-                        print(f"[Crop Orientation] masked_theta shape: {masked_theta.shape}")
-                        # masked_theta is already cropped to ROI size, just assign directly
+                    if 'tilt_d0' in roi_data and roi_data['tilt_d0'] is not None:
+                        print(f"[Crop Orientation] ROI '{roi_name}' tilt_d0 shape: {roi_data['tilt_d0'].shape}")
+                        print(f"[Crop Orientation] masked_tilt_d0 shape: {masked_tilt_d0.shape}")
+                        # masked_tilt_d0 is already cropped to ROI size, just assign directly
                         # But we need to check if shapes match
-                        if roi_data['theta'].shape == masked_theta.shape:
-                            roi_data['theta'] = masked_theta.astype(np.float32)
+                        if roi_data['tilt_d0'].shape == masked_tilt_d0.shape:
+                            roi_data['tilt_d0'] = masked_tilt_d0.astype(np.float32)
                             rois_updated += 1
-                            print(f"[Crop Orientation] ROI '{roi_name}' theta updated")
+                            print(f"[Crop Orientation] ROI '{roi_name}' tilt_d0 updated")
 
-                            # Also update phi if available
-                            if phi is not None and 'phi' in roi_data:
-                                roi_data['phi'] = masked_phi.astype(np.float32)
+                            # Also update tilt_d1 if available
+                            if tilt_d1 is not None and 'tilt_d1' in roi_data:
+                                roi_data['tilt_d1'] = masked_tilt_d1.astype(np.float32)
 
                             # Also update angle if present
                             if 'angle' in roi_data and roi_data['angle'] is not None:
-                                if roi_data['angle'].shape == masked_theta.shape:
+                                if roi_data['angle'].shape == masked_tilt_d0.shape:
                                     # Apply same mask to angle data
                                     masked_angle = roi_data['angle'].copy().astype(np.float64)
-                                    masked_angle[np.isnan(masked_theta)] = np.nan
+                                    masked_angle[np.isnan(masked_tilt_d0)] = np.nan
                                     roi_data['angle'] = masked_angle.astype(np.float32)
                                     print(f"[Crop Orientation] ROI '{roi_name}' angle updated")
                         else:
@@ -7397,8 +7805,8 @@ class AnalysisTab(QWidget):
             QApplication.restoreOverrideCursor()
 
             # Count masked voxels
-            num_masked = np.sum(np.isnan(masked_theta))
-            total_voxels = masked_theta.size
+            num_masked = np.sum(np.isnan(masked_tilt_d0))
+            total_voxels = masked_tilt_d0.size
             mask_percent = (num_masked / total_voxels) * 100
 
             # Update viewer and histogram if requested
@@ -7413,7 +7821,7 @@ class AnalysisTab(QWidget):
 
             # Export if requested
             if settings['export_vtk']:
-                self._exportMaskedOrientationVTK(masked_theta, phi if phi is None else masked_phi)
+                self._exportMaskedOrientationVTK(masked_tilt_d0, tilt_d1 if tilt_d1 is None else masked_tilt_d1)
 
             result_msg = (
                 f"Orientation data masked with void regions.\n\n"
@@ -7432,7 +7840,7 @@ class AnalysisTab(QWidget):
             traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to crop orientation: {str(e)}")
 
-    def _exportMaskedOrientationVTK(self, theta, phi=None):
+    def _exportMaskedOrientationVTK(self, tilt_d0, tilt_d1=None):
         """Export masked orientation to VTK file."""
         from vmm.io import export_orientation_to_vtk
 
@@ -7445,10 +7853,17 @@ class AnalysisTab(QWidget):
 
         if filepath:
             try:
-                export_orientation_to_vtk(filepath, theta, phi)
+                # Get noise_scale from orientation_data for proper offset
+                main_window = getattr(self, 'main_window', None)
+                noise_scale = 0
+                if main_window and hasattr(main_window, 'orientation_data') and main_window.orientation_data:
+                    noise_scale = main_window.orientation_data.get('noise_scale', 0)
+
+                export_orientation_to_vtk(filepath, tilt_d0, tilt_d1, origin_offset=noise_scale)
+                offset_msg = f"\nOrigin offset: ({noise_scale}, {noise_scale}, {noise_scale})" if noise_scale > 0 else ""
                 QMessageBox.information(
                     self, "Export Complete",
-                    f"Masked orientation exported to:\n{filepath}"
+                    f"Masked orientation exported to:\n{filepath}{offset_msg}"
                 )
             except Exception as e:
                 QMessageBox.critical(
@@ -7771,8 +8186,8 @@ class HistogramDialog(QDialog):
         if hasattr(self.main_window, 'viewer') and hasattr(self.main_window.viewer, 'rois'):
             for roi_name, roi_data in self.main_window.viewer.rois.items():
                 # Only show ROIs that have orientation data
-                if (roi_data.get('theta') is not None or
-                    roi_data.get('phi') is not None or
+                if (roi_data.get('tilt_d0') is not None or
+                    roi_data.get('tilt_d1') is not None or
                     roi_data.get('angle') is not None):
                     roi_check = QCheckBox(roi_name)
                     roi_check.setChecked(True)
@@ -7792,8 +8207,8 @@ class HistogramDialog(QDialog):
         orientation_layout = QVBoxLayout(orientation_group)
 
         self.ref_check = QCheckBox("Reference Orientation")
-        self.theta_check = QCheckBox("X-Z Orientation")
-        self.phi_check = QCheckBox("Y-Z Orientation")
+        self.theta_check = QCheckBox("Tilt d0")
+        self.phi_check = QCheckBox("Tilt d1")
 
         # Always enable all checkboxes - we'll check per-ROI availability
         self.ref_check.setEnabled(True)
@@ -7889,13 +8304,13 @@ class HistogramDialog(QDialog):
                         max_val = max(max_val, np.nanmax(data))
 
                 if self.theta_check.isChecked():
-                    data = roi_data.get('theta')
+                    data = roi_data.get('tilt_d0')
                     if data is not None:
                         min_val = min(min_val, np.nanmin(data))
                         max_val = max(max_val, np.nanmax(data))
 
                 if self.phi_check.isChecked():
-                    data = roi_data.get('phi')
+                    data = roi_data.get('tilt_d1')
                     if data is not None:
                         min_val = min(min_val, np.nanmin(data))
                         max_val = max(max_val, np.nanmax(data))
@@ -7919,8 +8334,8 @@ class HistogramDialog(QDialog):
             'rois': selected_rois,
             'orientations': {
                 'reference': self.ref_check.isChecked() and self.ref_check.isEnabled(),
-                'theta': self.theta_check.isChecked() and self.theta_check.isEnabled(),
-                'phi': self.phi_check.isChecked() and self.phi_check.isEnabled()
+                'tilt_d0': self.theta_check.isChecked() and self.theta_check.isEnabled(),
+                'tilt_d1': self.phi_check.isChecked() and self.phi_check.isEnabled()
             },
             'use_density': self.use_density_check.isChecked(),
             'statistics': {
@@ -8012,15 +8427,56 @@ class TrajectoryHistogramDialog(QDialog):
 
         layout.addWidget(roi_group)
 
+        # Angle Source Group
+        source_group = QGroupBox("Angle Source")
+        source_layout = QVBoxLayout(source_group)
+
+        from PySide6.QtWidgets import QRadioButton, QButtonGroup
+        self.angle_source_group = QButtonGroup(self)
+
+        self.radio_st = QRadioButton("Structure Tensor (tilt_xz / tilt_yz)")
+        self.radio_geom = QRadioButton("Geometric (coordinate differences)")
+
+        self.angle_source_group.addButton(self.radio_st, 0)
+        self.angle_source_group.addButton(self.radio_geom, 1)
+        self.radio_st.setChecked(True)
+
+        source_layout.addWidget(self.radio_st)
+        source_layout.addWidget(self.radio_geom)
+
+        # Voxel size inputs (for geometric mode)
+        voxel_layout = QGridLayout()
+        voxel_layout.addWidget(QLabel("Voxel size (axial):"), 0, 0)
+        self.voxel_axial_spin = QDoubleSpinBox()
+        self.voxel_axial_spin.setRange(0.001, 1000)
+        self.voxel_axial_spin.setValue(1.0)
+        self.voxel_axial_spin.setDecimals(3)
+        voxel_layout.addWidget(self.voxel_axial_spin, 0, 1)
+
+        voxel_layout.addWidget(QLabel("Voxel size (lateral):"), 1, 0)
+        self.voxel_lateral_spin = QDoubleSpinBox()
+        self.voxel_lateral_spin.setRange(0.001, 1000)
+        self.voxel_lateral_spin.setValue(1.0)
+        self.voxel_lateral_spin.setDecimals(3)
+        voxel_layout.addWidget(self.voxel_lateral_spin, 1, 1)
+
+        source_layout.addLayout(voxel_layout)
+
+        self.angle_source_group.idToggled.connect(self._onAngleSourceChanged)
+        self.voxel_axial_spin.setEnabled(False)
+        self.voxel_lateral_spin.setEnabled(False)
+
+        layout.addWidget(source_group)
+
         # Angle Type Selection Group
         angle_group = QGroupBox("Select Angle Types")
         angle_layout = QVBoxLayout(angle_group)
 
-        self.tilt_check = QCheckBox("X-Z Orientation")
+        self.tilt_check = QCheckBox("Tilt d0")
         self.tilt_check.setChecked(True)
         angle_layout.addWidget(self.tilt_check)
 
-        self.azimuth_check = QCheckBox("Y-Z Orientation")
+        self.azimuth_check = QCheckBox("Tilt d1")
         self.azimuth_check.setChecked(False)
         angle_layout.addWidget(self.azimuth_check)
 
@@ -8028,7 +8484,24 @@ class TrajectoryHistogramDialog(QDialog):
         self.true_azimuth_check.setChecked(False)
         angle_layout.addWidget(self.true_azimuth_check)
 
+        self.geometric_check = QCheckBox("Misalignment (geometric)")
+        self.geometric_check.setChecked(False)
+        angle_layout.addWidget(self.geometric_check)
+
         layout.addWidget(angle_group)
+
+        # Display Options Group
+        display_group = QGroupBox("Display Options")
+        display_layout = QVBoxLayout(display_group)
+
+        self.use_density_check = QCheckBox("Use Density (normalize to probability density)")
+        self.use_density_check.setChecked(False)
+        self.use_density_check.setToolTip(
+            "If checked, the histogram is normalized such that the integral equals 1.\n"
+            "Y-axis shows probability density instead of frequency counts.")
+        display_layout.addWidget(self.use_density_check)
+
+        layout.addWidget(display_group)
 
         # Statistical Display Options Group
         stats_group = QGroupBox("Statistical Analysis")
@@ -8065,6 +8538,19 @@ class TrajectoryHistogramDialog(QDialog):
         # Initialize auto range
         self.toggleAutoRange(True)
 
+    def _onAngleSourceChanged(self, *args):
+        """Toggle voxel size inputs and angle type checkboxes based on source."""
+        is_geom = self.angle_source_group.checkedId() == 1
+        self.voxel_axial_spin.setEnabled(is_geom)
+        self.voxel_lateral_spin.setEnabled(is_geom)
+        # In geometric mode, auto-select geometric check and disable ST-based checks
+        self.tilt_check.setEnabled(not is_geom)
+        self.azimuth_check.setEnabled(not is_geom)
+        self.true_azimuth_check.setEnabled(not is_geom)
+        self.geometric_check.setEnabled(not is_geom)
+        if is_geom:
+            self.geometric_check.setChecked(True)
+
     def toggleAutoRange(self, checked):
         """Enable/disable manual range controls"""
         self.range_min_spin.setEnabled(not checked)
@@ -8082,16 +8568,23 @@ class TrajectoryHistogramDialog(QDialog):
                 else:
                     selected_rois.append(roi_name)
 
+        is_geom = self.angle_source_group.checkedId() == 1
+
         config = {
             'bins': self.bins_spin.value(),
             'range': (self.range_min_spin.value(), self.range_max_spin.value()),
             'auto_range': self.auto_range_check.isChecked(),
             'rois': selected_rois if selected_rois else None,
             'use_single_trajectory': use_single,
+            'angle_source': 'geometric' if is_geom else 'structure_tensor',
+            'voxel_size_axial': self.voxel_axial_spin.value(),
+            'voxel_size_lateral': self.voxel_lateral_spin.value(),
+            'use_density': self.use_density_check.isChecked(),
             'angles': {
-                'tilt': self.tilt_check.isChecked(),
-                'azimuth': self.azimuth_check.isChecked(),
-                'true_azimuth': self.true_azimuth_check.isChecked()
+                'tilt': self.tilt_check.isChecked() if not is_geom else False,
+                'azimuth': self.azimuth_check.isChecked() if not is_geom else False,
+                'true_azimuth': self.true_azimuth_check.isChecked() if not is_geom else False,
+                'geometric': True if is_geom else self.geometric_check.isChecked()
             },
             'statistics': {
                 'mean': self.show_mean_check.isChecked(),
@@ -8219,7 +8712,7 @@ class ColorBarRangeDialog(QDialog):
         if hasattr(self.main_window, 'orientation_data') and self.main_window.orientation_data:
             active_orientation = None
             # Try to get any available orientation data
-            for key in ['reference', 'theta', 'phi']:
+            for key in ['reference', 'tilt_d0', 'tilt_d1']:
                 if key in self.main_window.orientation_data and self.main_window.orientation_data[key] is not None:
                     active_orientation = self.main_window.orientation_data[key]
                     break
@@ -8500,7 +8993,6 @@ class FiberTrajectorySettingsDialog(QDialog):
         self.settings = settings or {
             'fiber_diameter': 12.0,
             'volume_fraction': 0.5,
-            'propagation_axis': 'Z (default)',
             'integration_method': 'RK4',
             'tilt_min': -20.0,
             'tilt_max': 20.0,
@@ -8576,7 +9068,7 @@ class FiberTrajectorySettingsDialog(QDialog):
         self.tilt_max_spin.setValue(self.settings['tilt_max'])
         self.tilt_max_spin.setSuffix("°")
         tilt_layout.addWidget(self.tilt_max_spin)
-        color_layout.addRow("X-Z/Y-Z Range:", tilt_widget)
+        color_layout.addRow("Tilt Range:", tilt_widget)
 
         # Saturation Range (for Azimuth saturation mode)
         sat_widget = QWidget()
@@ -8819,7 +9311,6 @@ class FiberTrajectorySettingsDialog(QDialog):
         return {
             'fiber_diameter': self.fiber_diameter_spin.value(),
             'volume_fraction': self.volume_fraction_spin.value(),
-            'propagation_axis': 'Z (default)',  # Fixed: always Z-axis
             'integration_method': self.integration_method_combo.currentText(),
             'tilt_min': self.tilt_min_spin.value(),
             'tilt_max': self.tilt_max_spin.value(),
@@ -8852,7 +9343,7 @@ class InSegtSettingsDialog(QDialog):
         self.setMinimumWidth(350)
 
         self.settings = settings or {
-            'scale': 0.5,
+            'scale': 1.0,
             'sigmas': [1, 2],
             'patch_size': 9,
             'branching_factor': 5,
@@ -8864,31 +9355,6 @@ class InSegtSettingsDialog(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-
-        # Processing Scale
-        scale_group = QGroupBox("Processing Scale")
-        scale_layout = QFormLayout(scale_group)
-
-        self.scale_combo = QComboBox()
-        self.scale_combo.addItems(["0.25 (fastest)", "0.5 (balanced)", "0.75", "1.0 (full resolution)"])
-        scale_val = self.settings.get('scale', 0.5)
-        if scale_val <= 0.25:
-            self.scale_combo.setCurrentIndex(0)
-        elif scale_val <= 0.5:
-            self.scale_combo.setCurrentIndex(1)
-        elif scale_val <= 0.75:
-            self.scale_combo.setCurrentIndex(2)
-        else:
-            self.scale_combo.setCurrentIndex(3)
-        self.scale_combo.setToolTip(
-            "Image scale for processing:\n"
-            "0.25 = ~16x faster (lower accuracy)\n"
-            "0.5 = ~4x faster (good balance)\n"
-            "1.0 = full resolution (slowest, best accuracy)"
-        )
-        scale_layout.addRow("Scale:", self.scale_combo)
-
-        layout.addWidget(scale_group)
 
         # Model Parameters
         model_group = QGroupBox("Model Parameters")
@@ -8935,19 +9401,9 @@ class InSegtSettingsDialog(QDialog):
 
     def getSettings(self):
         """Return the current settings."""
-        scale_text = self.scale_combo.currentText()
-        if "0.25" in scale_text:
-            scale = 0.25
-        elif "0.5" in scale_text:
-            scale = 0.5
-        elif "0.75" in scale_text:
-            scale = 0.75
-        else:
-            scale = 1.0
-
         return {
-            'scale': scale,
-            'sigmas': [1, 2],  # Fixed for now
+            'scale': 1.0,
+            'sigmas': [1, 2],
             'patch_size': self.patch_size_spin.value(),
             'branching_factor': self.branching_factor_spin.value(),
             'number_layers': self.number_layers_spin.value(),
@@ -9322,6 +9778,103 @@ class VfSettingsDialog(QDialog):
         }
 
 
+class OrientationSettingsDialog(QDialog):
+    """Dialog for orientation computation settings in Analysis tab"""
+    def __init__(self, parent=None, settings=None, void_available=False):
+        super().__init__(parent)
+        self.setWindowTitle("Orientation Settings")
+        self.setModal(True)
+        self.setMinimumWidth(350)
+        self.void_available = void_available
+
+        # Default settings
+        self.settings = settings or {
+            'noise_scale': 10,
+            'use_average_reference': False,
+            'exclude_voids': True
+        }
+
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+
+        # Structure Tensor Group
+        tensor_group = QGroupBox("Structure Tensor")
+        tensor_layout = QFormLayout(tensor_group)
+
+        self.noise_scale_spin = QSpinBox()
+        self.noise_scale_spin.setRange(1, 30)
+        self.noise_scale_spin.setValue(self.settings['noise_scale'])
+        self.noise_scale_spin.setToolTip(
+            "Gaussian smoothing sigma for noise reduction.\n"
+            "Larger values provide more smoothing but reduce spatial resolution.\n"
+            "Also determines the edge trim width."
+        )
+        tensor_layout.addRow("Noise Scale:", self.noise_scale_spin)
+
+        layout.addWidget(tensor_group)
+
+        # Reference Vector Group
+        reference_group = QGroupBox("Reference Vector")
+        reference_layout = QVBoxLayout(reference_group)
+
+        self.use_average_check = QCheckBox("Use Average Fiber Direction")
+        self.use_average_check.setChecked(self.settings.get('use_average_reference', False))
+        self.use_average_check.setToolTip(
+            "If checked, uses the average fiber direction computed from all voxels\n"
+            "as the reference vector instead of the fixed axial direction [1, 0, 0].\n"
+            "This can provide better results when fibers are not perfectly aligned."
+        )
+        reference_layout.addWidget(self.use_average_check)
+
+        self.fixed_label = QLabel("Fixed reference: Axial direction [1, 0, 0]")
+        self.fixed_label.setStyleSheet("color: gray; font-style: italic;")
+        reference_layout.addWidget(self.fixed_label)
+
+        layout.addWidget(reference_group)
+
+        # Void Exclusion Group
+        void_group = QGroupBox("Void Handling")
+        void_layout = QVBoxLayout(void_group)
+
+        self.exclude_voids_check = QCheckBox("Exclude Void Regions")
+        self.exclude_voids_check.setChecked(self.settings.get('exclude_voids', True))
+        self.exclude_voids_check.setToolTip(
+            "Exclude void regions from orientation computation.\n"
+            "Sets orientation values to NaN in void areas.\n"
+            "Requires void detection to be performed first."
+        )
+        self.exclude_voids_check.setEnabled(self.void_available)
+        void_layout.addWidget(self.exclude_voids_check)
+
+        if not self.void_available:
+            void_hint = QLabel("(No void mask available - run void detection first)")
+            void_hint.setStyleSheet("color: gray; font-style: italic;")
+            void_layout.addWidget(void_hint)
+
+        layout.addWidget(void_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addStretch()
+        button_layout.addWidget(ok_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+
+    def getSettings(self):
+        """Return the current settings"""
+        return {
+            'noise_scale': self.noise_scale_spin.value(),
+            'use_average_reference': self.use_average_check.isChecked(),
+            'exclude_voids': self.exclude_voids_check.isChecked()
+        }
+
+
 class FiberDetectionSettingsDialog(QDialog):
     """Dialog for fiber detection settings in Analysis tab"""
     def __init__(self, parent=None, settings=None):
@@ -9339,7 +9892,8 @@ class FiberDetectionSettingsDialog(QDialog):
             'threshold_percentile': 50.0,
             'show_watershed': True,
             'show_centers': True,
-            'center_marker_size': 3
+            'center_marker_size': 3,
+            'exclude_voids': True
         }
 
         self.initUI()
@@ -9380,6 +9934,15 @@ class FiberDetectionSettingsDialog(QDialog):
         self.min_distance_spin.setSuffix(" px")
         self.min_distance_spin.setToolTip("Minimum distance between fiber centers")
         detect_layout.addRow("Min Peak Distance:", self.min_distance_spin)
+
+        self.exclude_voids_check = QCheckBox("Exclude Void Regions")
+        self.exclude_voids_check.setChecked(self.settings.get('exclude_voids', True))
+        self.exclude_voids_check.setToolTip(
+            "Exclude void regions from fiber detection.\n"
+            "Void pixels are excluded from Otsu threshold calculation.\n"
+            "Requires void detection to be performed first."
+        )
+        detect_layout.addRow(self.exclude_voids_check)
 
         layout.addWidget(detect_group)
 
@@ -9461,7 +10024,8 @@ class FiberDetectionSettingsDialog(QDialog):
             'threshold_percentile': self.threshold_percentile_spin.value(),
             'show_watershed': self.show_watershed_check.isChecked(),
             'show_centers': self.show_centers_check.isChecked(),
-            'center_marker_size': self.marker_size_spin.value()
+            'center_marker_size': self.marker_size_spin.value(),
+            'exclude_voids': self.exclude_voids_check.isChecked()
         }
 
 
@@ -9497,19 +10061,39 @@ class SimulationSettingsDialog(QDialog):
         orientation_group = QGroupBox("Orientation Data Source")
         orientation_layout = QFormLayout(orientation_group)
 
-        self.use_3d_orientation_check = QCheckBox("Use 3D Orientation Data")
-        self.use_3d_orientation_check.setChecked(self.settings.get('use_3d_orientation', False))
-        self.use_3d_orientation_check.stateChanged.connect(self.onUse3DOrientationChanged)
-        orientation_layout.addRow(self.use_3d_orientation_check)
+        # Orientation source radio buttons
+        from PySide6.QtWidgets import QRadioButton, QButtonGroup
+        self.orientation_source_group = QButtonGroup(self)
 
-        # ROI Selection
+        self.radio_gaussian = QRadioButton("Gaussian (manual φ₀, σ)")
+        self.radio_3d = QRadioButton("3D Orientation Data (Structure Tensor)")
+        self.radio_trajectory = QRadioButton("Fiber Trajectory (geometric)")
+
+        self.orientation_source_group.addButton(self.radio_gaussian, 0)
+        self.orientation_source_group.addButton(self.radio_3d, 1)
+        self.orientation_source_group.addButton(self.radio_trajectory, 2)
+
+        # Set current selection
+        source = self.settings.get('orientation_source', 'gaussian')
+        if source == '3d' or self.settings.get('use_3d_orientation', False):
+            self.radio_3d.setChecked(True)
+        elif source == 'trajectory':
+            self.radio_trajectory.setChecked(True)
+        else:
+            self.radio_gaussian.setChecked(True)
+
+        orientation_layout.addRow(self.radio_gaussian)
+        orientation_layout.addRow(self.radio_3d)
+        orientation_layout.addRow(self.radio_trajectory)
+
+        self.orientation_source_group.idToggled.connect(self.onOrientationSourceChanged)
+
+        # ROI Selection (for 3D orientation)
         self.roi_combo = QComboBox()
         self.roi_combo.addItem("Global (All Data)", None)
-        # Add ROIs that have orientation data
         for roi_name, roi_data in self.rois.items():
-            if roi_data.get('angle') is not None or roi_data.get('theta') is not None:
+            if roi_data.get('angle') is not None or roi_data.get('tilt_d0') is not None:
                 self.roi_combo.addItem(roi_name, roi_name)
-        # Set current selection
         current_roi = self.settings.get('selected_roi')
         if current_roi:
             idx = self.roi_combo.findData(current_roi)
@@ -9517,8 +10101,40 @@ class SimulationSettingsDialog(QDialog):
                 self.roi_combo.setCurrentIndex(idx)
         orientation_layout.addRow("ROI:", self.roi_combo)
 
-        # Initially set ROI combo enabled state
-        self.roi_combo.setEnabled(self.use_3d_orientation_check.isChecked())
+        # Trajectory ROI selection
+        self.traj_roi_combo = QComboBox()
+        self.traj_roi_combo.addItem("All ROIs", "all")
+        # Add ROIs that have trajectories
+        if self.main_window and hasattr(self.main_window, 'modelling_tab'):
+            modelling = self.main_window.modelling_tab
+            if hasattr(modelling, 'roi_trajectories') and modelling.roi_trajectories:
+                for roi_name in modelling.roi_trajectories:
+                    self.traj_roi_combo.addItem(roi_name, roi_name)
+            if hasattr(modelling, 'fiber_trajectory') and modelling.fiber_trajectory is not None:
+                self.traj_roi_combo.addItem("Single Trajectory", "single")
+        current_traj_roi = self.settings.get('trajectory_roi', 'all')
+        idx = self.traj_roi_combo.findData(current_traj_roi)
+        if idx >= 0:
+            self.traj_roi_combo.setCurrentIndex(idx)
+        orientation_layout.addRow("Trajectory:", self.traj_roi_combo)
+
+        # Voxel size inputs for trajectory mode
+        self.voxel_axial_spin = QDoubleSpinBox()
+        self.voxel_axial_spin.setRange(0.001, 1000)
+        self.voxel_axial_spin.setValue(self.settings.get('voxel_size_axial', 1.0))
+        self.voxel_axial_spin.setDecimals(3)
+        self.voxel_axial_spin.setSingleStep(0.1)
+        orientation_layout.addRow("Voxel size (axial):", self.voxel_axial_spin)
+
+        self.voxel_lateral_spin = QDoubleSpinBox()
+        self.voxel_lateral_spin.setRange(0.001, 1000)
+        self.voxel_lateral_spin.setValue(self.settings.get('voxel_size_lateral', 1.0))
+        self.voxel_lateral_spin.setDecimals(3)
+        self.voxel_lateral_spin.setSingleStep(0.1)
+        orientation_layout.addRow("Voxel size (lateral):", self.voxel_lateral_spin)
+
+        # Set initial enabled states
+        self.onOrientationSourceChanged()
 
         layout.addWidget(orientation_group)
 
@@ -9633,10 +10249,13 @@ class SimulationSettingsDialog(QDialog):
         self.kink_width_spin.setEnabled(enabled)
         self.gauge_length_spin.setEnabled(enabled)
 
-    def onUse3DOrientationChanged(self, state):
-        """Toggle ROI selection based on 3D orientation checkbox"""
-        enabled = (state == Qt.Checked.value) if hasattr(Qt.Checked, 'value') else (state == 2)
-        self.roi_combo.setEnabled(enabled)
+    def onOrientationSourceChanged(self, *args):
+        """Toggle input fields based on selected orientation source."""
+        source_id = self.orientation_source_group.checkedId()
+        self.roi_combo.setEnabled(source_id == 1)       # 3D orientation
+        self.traj_roi_combo.setEnabled(source_id == 2)   # Trajectory
+        self.voxel_axial_spin.setEnabled(source_id == 2)
+        self.voxel_lateral_spin.setEnabled(source_id == 2)
 
     def resetToDefaults(self):
         """Reset all values to defaults"""
@@ -9652,6 +10271,8 @@ class SimulationSettingsDialog(QDialog):
     def getSettings(self):
         """Return current settings"""
         use_correction = self.use_correction_check.isChecked()
+        source_id = self.orientation_source_group.checkedId()
+        source_map = {0: 'gaussian', 1: '3d', 2: 'trajectory'}
         return {
             'maximum_shear_stress': self.max_shear_spin.value(),
             'shear_stress_step_size': self.shear_step_spin.value(),
@@ -9660,8 +10281,12 @@ class SimulationSettingsDialog(QDialog):
             'fiber_misalignment_step_size': self.misalign_step_spin.value(),
             'kink_width': self.kink_width_spin.value() if use_correction else None,
             'gauge_length': self.gauge_length_spin.value() if use_correction else None,
-            'use_3d_orientation': self.use_3d_orientation_check.isChecked(),
-            'selected_roi': self.roi_combo.currentData()
+            'orientation_source': source_map.get(source_id, 'gaussian'),
+            'use_3d_orientation': source_id == 1,
+            'selected_roi': self.roi_combo.currentData(),
+            'trajectory_roi': self.traj_roi_combo.currentData(),
+            'voxel_size_axial': self.voxel_axial_spin.value(),
+            'voxel_size_lateral': self.voxel_lateral_spin.value(),
         }
 
 
@@ -9730,8 +10355,8 @@ class SimulationTab(QWidget):
             self.simulation_settings = dialog.getSettings()
             # Update UI state based on settings
             if self.main_window and hasattr(self.main_window, 'simulation_content'):
-                use_3d = self.simulation_settings.get('use_3d_orientation', False)
-                self.main_window.simulation_content.updateOrientationInputState(use_3d)
+                source = self.simulation_settings.get('orientation_source', 'gaussian')
+                self.main_window.simulation_content.updateOrientationInputState(source != 'gaussian')
 
     def clearGraph(self):
         """Clear the stress-strain graph and simulation results"""
@@ -9768,15 +10393,14 @@ class SimulationTab(QWidget):
         # Get simulation settings
         settings = self.simulation_settings
 
-        # Check if using 3D orientation data (from settings dialog)
-        use_3d_orientation = settings.get('use_3d_orientation', False)
+        orientation_source = settings.get('orientation_source', 'gaussian')
         selected_roi = settings.get('selected_roi', None)
 
         self.main_window.status_label.setText("Running simulation...")
         QApplication.processEvents()
 
         try:
-            if use_3d_orientation:
+            if orientation_source == '3d':
                 # Get orientation data from selected ROI or global data
                 if selected_roi is not None and isinstance(selected_roi, str) and selected_roi in self.main_window.viewer.rois:
                     roi_data = self.main_window.viewer.rois[selected_roi]
@@ -9795,6 +10419,51 @@ class SimulationTab(QWidget):
                 # Run simulation with measured orientation profile
                 strength, strain, stress_curve, strain_array = estimate_compression_strength_from_profile(
                     orientation_profile=orientation_profile,
+                    material_params=material,
+                    maximum_shear_stress=settings['maximum_shear_stress'],
+                    shear_stress_step_size=settings['shear_stress_step_size'],
+                    maximum_axial_strain=settings['maximum_axial_strain'],
+                    maximum_fiber_misalignment=settings['maximum_fiber_misalignment'],
+                    fiber_misalignment_step_size=settings['fiber_misalignment_step_size'],
+                    kink_width=settings.get('kink_width'),
+                    gauge_length=settings.get('gauge_length')
+                )
+            elif orientation_source == 'trajectory':
+                # Compute misalignment angles from fiber trajectory coordinates
+                modelling = self.main_window.modelling_tab
+                traj_roi = settings.get('trajectory_roi', 'all')
+                voxel_axial = settings.get('voxel_size_axial', 1.0)
+                voxel_lateral = settings.get('voxel_size_lateral', 1.0)
+
+                angles = np.array([])
+                if traj_roi == 'all' and hasattr(modelling, 'roi_trajectories') and modelling.roi_trajectories:
+                    for roi_data in modelling.roi_trajectories.values():
+                        traj = roi_data.get('trajectory')
+                        if traj is not None:
+                            a = traj.compute_geometric_misalignment(
+                                voxel_size_axial=voxel_axial,
+                                voxel_size_lateral=voxel_lateral)
+                            angles = np.concatenate([angles, a])
+                elif traj_roi == 'single' and hasattr(modelling, 'fiber_trajectory') and modelling.fiber_trajectory is not None:
+                    angles = modelling.fiber_trajectory.compute_geometric_misalignment(
+                        voxel_size_axial=voxel_axial,
+                        voxel_size_lateral=voxel_lateral)
+                elif hasattr(modelling, 'roi_trajectories') and traj_roi in modelling.roi_trajectories:
+                    traj = modelling.roi_trajectories[traj_roi].get('trajectory')
+                    if traj is not None:
+                        angles = traj.compute_geometric_misalignment(
+                            voxel_size_axial=voxel_axial,
+                            voxel_size_lateral=voxel_lateral)
+
+                if len(angles) == 0:
+                    raise ValueError("No trajectory data available. Please generate fiber trajectories first.")
+
+                self.main_window.status_label.setText(
+                    f"Running simulation... ({len(angles)} angle samples from trajectories)")
+                QApplication.processEvents()
+
+                strength, strain, stress_curve, strain_array = estimate_compression_strength_from_profile(
+                    orientation_profile=angles,
                     material_params=material,
                     maximum_shear_stress=settings['maximum_shear_stress'],
                     shear_stress_step_size=settings['shear_stress_step_size'],
@@ -9831,7 +10500,8 @@ class SimulationTab(QWidget):
                 case_name = f"Case {len(sim_content.ax.lines) + 1}"
             sim_content.plotStressStrain(strain_array, stress_curve, case_name)
 
-            mode = "3D data" if use_3d_orientation else "Gaussian"
+            mode_map = {'gaussian': 'Gaussian', '3d': '3D data', 'trajectory': 'Trajectory'}
+            mode = mode_map.get(orientation_source, 'Gaussian')
 
             # Store simulation result for export
             result_data = {
@@ -9849,8 +10519,8 @@ class SimulationTab(QWidget):
                     'tau_y': sim_content.tau_y_spin.value(),
                     'K': sim_content.k_spin.value(),
                     'n': sim_content.n_spin.value(),
-                    'initial_misalignment': sim_content.initial_misalignment_spin.value() if not use_3d_orientation else 'N/A',
-                    'std_deviation': sim_content.std_deviation_spin.value() if not use_3d_orientation else 'N/A'
+                    'initial_misalignment': sim_content.initial_misalignment_spin.value() if orientation_source == 'gaussian' else 'N/A',
+                    'std_deviation': sim_content.std_deviation_spin.value() if orientation_source == 'gaussian' else 'N/A'
                 },
                 'settings': {
                     'maximum_shear_stress': settings['maximum_shear_stress'],
@@ -10009,15 +10679,15 @@ class SimulationContentPanel(QWidget):
         self.k_spin = QDoubleSpinBox()
         self.k_spin.setRange(0, 10)
         self.k_spin.setValue(0)
-        self.k_spin.setDecimals(3)
-        self.k_spin.setSingleStep(0.01)
+        self.k_spin.setDecimals(6)
+        self.k_spin.setSingleStep(0.001)
         plasticity_layout.addRow("Hardening Coeff. (K):", self.k_spin)
 
         # Hardening Exponent (n)
         self.n_spin = QDoubleSpinBox()
-        self.n_spin.setRange(0, 10)
+        self.n_spin.setRange(0, 100)
         self.n_spin.setValue(0)
-        self.n_spin.setDecimals(1)
+        self.n_spin.setDecimals(4)
         self.n_spin.setSingleStep(0.1)
         plasticity_layout.addRow("Hardening Exponent (n):", self.n_spin)
 
@@ -10181,8 +10851,8 @@ class VMMMainWindow(QMainWindow):
         self.current_volume = None
         self.orientation_data = {
             'reference': None,
-            'theta': None,
-            'phi': None
+            'tilt_d0': None,
+            'tilt_d1': None
         }
         self.initUI()
 
@@ -10320,25 +10990,6 @@ class VMMMainWindow(QMainWindow):
         slice_layout.addWidget(self.z_slice_spin, 2, 2)
 
         slider_layout.addWidget(slice_group)
-
-        # Noise-scale control for Analysis
-        noise_group = QGroupBox("Analysis")
-        noise_layout = QVBoxLayout(noise_group)
-
-        noise_layout.addWidget(QLabel("Noise Scale:"))
-        self.noise_scale_slider = QSlider(Qt.Horizontal)
-        self.noise_scale_slider.setRange(1, 20)
-        self.noise_scale_slider.setValue(10)
-        self.noise_scale_slider.valueChanged.connect(self.updateNoiseScale)
-        noise_layout.addWidget(self.noise_scale_slider)
-
-        self.noise_scale_label = QLabel("10")
-        self.noise_scale_label.setAlignment(Qt.AlignCenter)
-        noise_layout.addWidget(self.noise_scale_label)
-
-        self.noise_group = noise_group
-        self.noise_group.setVisible(False)  # Initially hidden
-        slider_layout.addWidget(noise_group)
 
         # Image Adjustment Group
         adjustment_group = QGroupBox("Image Adjustment")
@@ -10597,7 +11248,10 @@ class VMMMainWindow(QMainWindow):
         layout.addWidget(export_group)
         layout.addStretch()
 
-        return ribbon
+        # Wrap in scrollable container
+        scroll = ScrollableRibbon()
+        scroll.setRibbonWidget(ribbon)
+        return scroll
 
     def _createAnalysisRibbon(self):
         """Create Analysis tab ribbon toolbar"""
@@ -10643,6 +11297,10 @@ class VMMMainWindow(QMainWindow):
         roi_mode_layout.addWidget(self.roi_mode_combo)
         analysis_layout.addWidget(roi_mode_widget)
 
+        self.orientation_settings_btn = RibbonButton("Orientation\nSettings")
+        self.orientation_settings_btn.clicked.connect(self.openOrientationSettings)
+        analysis_layout.addWidget(self.orientation_settings_btn)
+
         self.compute_btn = RibbonButton("Compute\nOrientation")
         self.compute_btn.clicked.connect(self.computeOrientation)
         analysis_layout.addWidget(self.compute_btn)
@@ -10656,11 +11314,6 @@ class VMMMainWindow(QMainWindow):
         self.histogram_btn.clicked.connect(self.openHistogramDialog)
         self.histogram_btn.setEnabled(False)
         analysis_layout.addWidget(self.histogram_btn)
-
-        self.magnify_btn = RibbonButton("Magnify")
-        self.magnify_btn.setCheckable(True)
-        self.magnify_btn.clicked.connect(self.toggleMagnify)
-        analysis_layout.addWidget(self.magnify_btn)
 
         self.reset_roi_btn = RibbonButton("Reset\nROI")
         self.reset_roi_btn.setToolTip("Clear all ROIs")
@@ -10768,10 +11421,24 @@ class VMMMainWindow(QMainWindow):
         self.export_vf_btn.setEnabled(False)
         export_layout.addWidget(self.export_vf_btn)
 
+        self.export_void_btn = RibbonButton("Export\nVoid")
+        self.export_void_btn.setToolTip("Export void regions as closed surface mesh (VTK)")
+        self.export_void_btn.clicked.connect(self.exportVoidToVTK)
+        self.export_void_btn.setEnabled(False)
+        export_layout.addWidget(self.export_void_btn)
+
+        self.save_screenshot_btn = RibbonButton("Save\nScreen")
+        self.save_screenshot_btn.setToolTip("Save the current slice views as an image file")
+        self.save_screenshot_btn.clicked.connect(self.saveScreenshot)
+        export_layout.addWidget(self.save_screenshot_btn)
+
         layout.addWidget(export_group)
         layout.addStretch()
 
-        return ribbon
+        # Wrap in scrollable container
+        scroll = ScrollableRibbon()
+        scroll.setRibbonWidget(ribbon)
+        return scroll
 
     def _createModellingRibbon(self):
         """Create Modelling tab ribbon toolbar"""
@@ -10830,7 +11497,10 @@ class VMMMainWindow(QMainWindow):
         layout.addWidget(analysis_group)
         layout.addStretch()
 
-        return ribbon
+        # Wrap in scrollable container
+        scroll = ScrollableRibbon()
+        scroll.setRibbonWidget(ribbon)
+        return scroll
 
     def _createSimulationRibbon(self):
         """Create Simulation tab ribbon toolbar"""
@@ -10891,7 +11561,10 @@ class VMMMainWindow(QMainWindow):
         layout.addWidget(export_group)
         layout.addStretch()
 
-        return ribbon
+        # Wrap in scrollable container
+        scroll = ScrollableRibbon()
+        scroll.setRibbonWidget(ribbon)
+        return scroll
 
     # Delegate methods for ribbon buttons
     def openImportDialog(self):
@@ -11080,12 +11753,6 @@ class VMMMainWindow(QMainWindow):
         if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openHistogramDialog'):
             self.analysis_tab.openHistogramDialog()
 
-    def toggleMagnify(self, checked):
-        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'toggleMagnify'):
-            if self.viewer and self.analysis_tab.viewer != self.viewer:
-                self.analysis_tab.viewer = self.viewer
-            self.analysis_tab.toggleMagnify(checked)
-
     def resetAllROIs(self):
         if self.viewer:
             self.viewer.resetAllROIs()
@@ -11125,8 +11792,8 @@ class VMMMainWindow(QMainWindow):
                         'bounds': roi_bounds,
                         'color': color,
                         'polygon_xy': None,  # No polygon for coordinate-based ROI
-                        'theta': None,
-                        'phi': None,
+                        'tilt_d0': None,
+                        'tilt_d1': None,
                         'angle': None
                     }
 
@@ -11142,6 +11809,10 @@ class VMMMainWindow(QMainWindow):
                         f"  Y: {y_min} - {y_max}\n"
                         f"  Z: {z_min} - {z_max}"
                     )
+
+    def openOrientationSettings(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openOrientationSettings'):
+            self.analysis_tab.openOrientationSettings()
 
     def openFiberDetectionSettings(self):
         if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openFiberDetectionSettings'):
@@ -11183,6 +11854,40 @@ class VMMMainWindow(QMainWindow):
         if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'exportVfMapToVTK'):
             self.analysis_tab.exportVfMapToVTK()
 
+    def exportVoidToVTK(self):
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'exportVoidToVTK'):
+            self.analysis_tab.exportVoidToVTK()
+
+    def saveScreenshot(self):
+        """Save the current slice views as an image file."""
+        if not hasattr(self, 'viewer') or self.viewer is None:
+            QMessageBox.warning(self, "Warning", "No viewer available")
+            return
+
+        if self.current_volume is None:
+            QMessageBox.warning(self, "Warning", "No volume loaded")
+            return
+
+        # File dialog for saving
+        filepath, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Save Screenshot",
+            "",
+            "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;PDF Document (*.pdf);;SVG Vector (*.svg);;TIFF Image (*.tif *.tiff);;All Files (*)"
+        )
+
+        if not filepath:
+            return
+
+        try:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            self.viewer.saveScreenshot(filepath)
+            QApplication.restoreOverrideCursor()
+            QMessageBox.information(self, "Success", f"Screenshot saved to:\n{filepath}")
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Error", f"Failed to save screenshot:\n{str(e)}")
+
     def openVoidSettings(self):
         """Open void analysis settings dialog."""
         if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'openVoidSettings'):
@@ -11204,7 +11909,7 @@ class VMMMainWindow(QMainWindow):
         reply = QMessageBox.question(
             self, "Reset All Analysis",
             "This will reset all analysis results including:\n\n"
-            "• Orientation data (theta, phi, angle)\n"
+            "• Orientation data (tilt_d0, tilt_d1, angle)\n"
             "• Fiber volume fraction (Vf) maps\n"
             "• Void analysis results\n"
             "• Fiber detection results\n"
@@ -11237,8 +11942,8 @@ class VMMMainWindow(QMainWindow):
                 # Reset ROI orientation data
                 if hasattr(self.viewer, 'rois'):
                     for roi_name, roi_data in self.viewer.rois.items():
-                        roi_data['theta'] = None
-                        roi_data['phi'] = None
+                        roi_data['tilt_d0'] = None
+                        roi_data['tilt_d1'] = None
                         roi_data['angle'] = None
 
                 # Reset Vf data
@@ -11249,6 +11954,7 @@ class VMMMainWindow(QMainWindow):
                 # Reset void data
                 self.viewer.void_mask = None
                 self.viewer.void_roi_bounds = None
+                self.viewer.void_polygon_mask = None
                 self.viewer.show_void_overlay = False
 
                 # Reset fiber detection
@@ -11288,10 +11994,12 @@ class VMMMainWindow(QMainWindow):
 
                 # Reset fiber detection settings to defaults
                 self.analysis_tab.fiber_detection_settings = {
-                    'min_diameter': 5,
-                    'max_diameter': 20,
-                    'min_distance': 8,
-                    'threshold_rel': 0.3
+                    'min_diameter': 5.0,
+                    'max_diameter': 25.0,
+                    'min_distance': 5,
+                    'show_watershed': True,
+                    'show_centers': True,
+                    'center_marker_size': 3
                 }
 
             # Reset export buttons
@@ -11299,12 +12007,11 @@ class VMMMainWindow(QMainWindow):
                 self.export_orientation_btn.setEnabled(False)
             if hasattr(self, 'export_vf_btn'):
                 self.export_vf_btn.setEnabled(False)
+            if hasattr(self, 'export_void_btn'):
+                self.export_void_btn.setEnabled(False)
 
             # Remove dynamic toggles from pipeline panel
-            if hasattr(self, '_vf_toggle_added'):
-                self._vf_toggle_added = False
-            if hasattr(self, '_void_toggle_added'):
-                self._void_toggle_added = False
+            self._resetPipelineToggles()
 
             QApplication.restoreOverrideCursor()
 
@@ -11323,10 +12030,44 @@ class VMMMainWindow(QMainWindow):
             traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to reset analysis: {str(e)}")
 
-    def updateNoiseScale(self):
-        """Update noise scale value for analysis"""
-        value = self.noise_scale_slider.value()
-        self.noise_scale_label.setText(str(value))
+    def _resetPipelineToggles(self):
+        """Remove all dynamically added toggles from the Pipeline group."""
+        # Remove Vf and Void widgets from pipeline group
+        if hasattr(self, 'slider_panel'):
+            slider_layout = self.slider_panel.layout()
+            for i in range(slider_layout.count()):
+                item = slider_layout.itemAt(i)
+                if item and item.widget():
+                    widget = item.widget()
+                    if isinstance(widget, QGroupBox) and widget.title() == "Pipeline":
+                        pipeline_layout = widget.layout()
+                        # Remove all items except orientation_container (index 0)
+                        while pipeline_layout.count() > 1:
+                            child = pipeline_layout.takeAt(pipeline_layout.count() - 1)
+                            if child is None:
+                                continue
+                            w = child.widget()
+                            if w is not None:
+                                w.setParent(None)
+                                w.deleteLater()
+                        break
+
+        # Clear orientation ROI toggles from orientation_container
+        if hasattr(self, 'viewer') and self.viewer:
+            container_layout = self.viewer.orientation_container_layout
+            while container_layout.count() > 0:
+                child = container_layout.takeAt(0)
+                if child is None:
+                    continue
+                w = child.widget()
+                if w is not None:
+                    w.setParent(None)
+                    w.deleteLater()
+            self.viewer.orientation_roi_widgets.clear()
+
+        # Reset flags
+        self._vf_toggle_added = False
+        self._void_toggle_added = False
 
     def addVfToggle(self):
         """Add Vf overlay toggle to the pipeline panel."""
@@ -11440,14 +12181,12 @@ class VMMMainWindow(QMainWindow):
             # Hide slicer view, Modelling tab has its own viewport
             self.content_splitter.setVisible(False)
             self.simulation_content.setVisible(False)
-            self.noise_group.setVisible(False)
             self.ribbon_stack.setVisible(True)
             self.modelling_content.setVisible(True)
         elif index == 3:  # Simulation tab
             # Hide slicer view, show simulation content
             self.content_splitter.setVisible(False)
             self.simulation_content.setVisible(True)
-            self.noise_group.setVisible(False)
             self.ribbon_stack.setVisible(True)
             self.modelling_content.setVisible(False)
         else:
@@ -11456,8 +12195,6 @@ class VMMMainWindow(QMainWindow):
             self.simulation_content.setVisible(False)
             self.modelling_content.setVisible(False)
             self.ribbon_stack.setVisible(True)
-            # Show noise group only for Analysis tab
-            self.noise_group.setVisible(index == 1)
 
 
     def updateSlices(self):
@@ -11703,6 +12440,31 @@ class VMMMainWindow(QMainWindow):
 def main():
     from vmm.splash import SplashScreen
     from vmm.theme import get_stylesheet, apply_mpl_theme
+    import traceback
+
+    # Set up exception hook to log uncaught exceptions
+    def exception_hook(exc_type, exc_value, exc_tb):
+        """Log uncaught exceptions to the log file."""
+        error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        logger.error(f"Uncaught exception:\n{error_msg}")
+        # Also print to stderr for immediate visibility
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = exception_hook
+
+    # Qt message handler to log Qt warnings/errors
+    from PySide6.QtCore import qInstallMessageHandler, QtMsgType
+
+    def qt_message_handler(mode, context, message):
+        """Handle Qt messages and log them."""
+        if mode == QtMsgType.QtWarningMsg:
+            logger.warning(f"Qt Warning: {message}")
+        elif mode == QtMsgType.QtCriticalMsg:
+            logger.error(f"Qt Critical: {message}")
+        elif mode == QtMsgType.QtFatalMsg:
+            logger.critical(f"Qt Fatal: {message}")
+
+    qInstallMessageHandler(qt_message_handler)
 
     app = QApplication(sys.argv)
 

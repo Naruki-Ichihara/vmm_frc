@@ -41,17 +41,18 @@ class FiberTrajectory:
         self.fiber_volume_fraction = None
         self.trajectories = []  # List of (axis_position, points) tuples
         # Orientation angles (matching Structure Tensor definitions)
-        self.angles = []  # X-Z orientation: arctan2(v_d0, v_axial) at each step (0° = aligned with Z)
-        self.azimuths = []  # Y-Z orientation: arctan2(v_d1, v_axial) at each step (0° = aligned with Z)
-        self.azimuth_angles = []  # True azimuth: arctan2(v_d1, v_d0) in cross-section (-180 to 180)
+        # tilt_xz: arctan2(v_x, v_z) - tilt angle in X-Z plane (0° = aligned with Z)
+        # tilt_yz: arctan2(v_y, v_z) - tilt angle in Y-Z plane (0° = aligned with Z)
+        # azimuth: arctan2(v_y, v_x) - azimuth angle in X-Y plane (-180° to 180°)
+        self.tilt_xz = []  # X-Z plane tilt at each step
+        self.tilt_yz = []  # Y-Z plane tilt at each step
+        self.azimuth = []  # X-Y plane azimuth at each step
         # Per-fiber trajectory data (for variable-length trajectories)
         self.fiber_trajectories = []  # List of per-fiber trajectories
-        self.fiber_angles = []  # List of per-fiber X-Z angles
-        self.fiber_azimuths = []  # List of per-fiber Y-Z angles
-        self.fiber_azimuth_angles = []  # List of per-fiber true azimuth angles
+        self.fiber_tilt_xz = []  # List of per-fiber X-Z tilt angles
+        self.fiber_tilt_yz = []  # List of per-fiber Y-Z tilt angles
+        self.fiber_azimuth = []  # List of per-fiber azimuth angles
         self.active_fibers = None  # Boolean mask of active fibers
-        # Propagation is always along Z-axis (fibers assumed along Z direction)
-        self.propagation_axis = 2  # Z-axis
         # Status callback for GUI status updates
         self.status_callback = status_callback
 
@@ -105,14 +106,11 @@ class FiberTrajectory:
         # Store polygon mask for filtering
         self.polygon_mask = polygon_mask
 
-        # Propagation is always along Z-axis (fibers assumed along Z direction)
-        self.propagation_axis = 2  # Z-axis
-
-        # Z-axis propagation: sample in XY plane
+        # Propagation along Z-axis: sample in XY plane
         # shape is (z, y, x) -> indices (0, 1, 2)
         cross_section_dims = (shape[1], shape[2])  # (y, x)
         n_slices = shape[0]  # z
-        self._log(f"Propagation axis: Z, sampling in XY plane ({cross_section_dims[0]}x{cross_section_dims[1]})")
+        self._log(f"Sampling in XY plane ({cross_section_dims[0]}x{cross_section_dims[1]})")
 
         # Calculate number of fibers based on volume fraction
         cross_section_area = cross_section_dims[0] * cross_section_dims[1]
@@ -187,16 +185,16 @@ class FiberTrajectory:
 
         self.points = points
         self.trajectories = [(0, points.copy())]
-        self.angles = [np.zeros(len(points))]
-        self.azimuths = [np.zeros(len(points))]
-        self.azimuth_angles = [np.zeros(len(points))]
+        self.tilt_xz = [np.zeros(len(points))]
+        self.tilt_yz = [np.zeros(len(points))]
+        self.azimuth = [np.zeros(len(points))]
 
         # Initialize per-fiber trajectory data
         n_fibers = len(points)
         self.fiber_trajectories = [[(0, points[i].copy())] for i in range(n_fibers)]
-        self.fiber_angles = [[0.0] for _ in range(n_fibers)]
-        self.fiber_azimuths = [[0.0] for _ in range(n_fibers)]
-        self.fiber_azimuth_angles = [[0.0] for _ in range(n_fibers)]
+        self.fiber_tilt_xz = [[0.0] for _ in range(n_fibers)]
+        self.fiber_tilt_yz = [[0.0] for _ in range(n_fibers)]
+        self.fiber_azimuth = [[0.0] for _ in range(n_fibers)]
         self.active_fibers = np.ones(n_fibers, dtype=bool)
 
         return points
@@ -231,9 +229,6 @@ class FiberTrajectory:
         """
         self.bounds = shape
 
-        # Propagation is always along Z-axis (fibers assumed along Z direction)
-        self.propagation_axis = 2  # Z-axis
-
         # Detect fiber centers from image
         centers, diameters = detect_fiber_centers(
             image,
@@ -255,16 +250,16 @@ class FiberTrajectory:
 
         self.points = points
         self.trajectories = [(0, points.copy())]
-        self.angles = [np.zeros(len(points))]
-        self.azimuths = [np.zeros(len(points))]
-        self.azimuth_angles = [np.zeros(len(points))]
+        self.tilt_xz = [np.zeros(len(points))]
+        self.tilt_yz = [np.zeros(len(points))]
+        self.azimuth = [np.zeros(len(points))]
 
         # Initialize per-fiber trajectory data
         n_fibers = len(points)
         self.fiber_trajectories = [[(0, points[i].copy())] for i in range(n_fibers)]
-        self.fiber_angles = [[0.0] for _ in range(n_fibers)]
-        self.fiber_azimuths = [[0.0] for _ in range(n_fibers)]
-        self.fiber_azimuth_angles = [[0.0] for _ in range(n_fibers)]
+        self.fiber_tilt_xz = [[0.0] for _ in range(n_fibers)]
+        self.fiber_tilt_yz = [[0.0] for _ in range(n_fibers)]
+        self.fiber_azimuth = [[0.0] for _ in range(n_fibers)]
         self.active_fibers = np.ones(n_fibers, dtype=bool)
 
         # Exclude fibers near the boundary from tracking
@@ -307,17 +302,108 @@ class FiberTrajectory:
         """Return per-fiber trajectory data (variable length trajectories)."""
         return self.fiber_trajectories.copy()
 
-    def get_fiber_angles(self) -> list:
-        """Return per-fiber angle data (variable length)."""
-        return self.fiber_angles.copy()
+    def get_fiber_tilt_xz(self) -> list:
+        """Return per-fiber X-Z plane tilt angle data (variable length)."""
+        return self.fiber_tilt_xz.copy()
 
-    def get_angles(self) -> list:
-        """Return misalignment angles (tilt from axis) at each trajectory step."""
-        return self.angles.copy()
+    def get_fiber_tilt_yz(self) -> list:
+        """Return per-fiber Y-Z plane tilt angle data (variable length)."""
+        return self.fiber_tilt_yz.copy()
 
-    def get_azimuths(self) -> list:
-        """Return azimuthal angles (direction in cross-section plane, 0-360°) at each trajectory step."""
-        return self.azimuths.copy()
+    def get_fiber_azimuth(self) -> list:
+        """Return per-fiber X-Y plane azimuth angle data (variable length)."""
+        return self.fiber_azimuth.copy()
+
+    def get_tilt_xz(self) -> list:
+        """Return X-Z plane tilt angles at each trajectory step."""
+        return self.tilt_xz.copy()
+
+    def get_tilt_yz(self) -> list:
+        """Return Y-Z plane tilt angles at each trajectory step."""
+        return self.tilt_yz.copy()
+
+    def get_azimuth(self) -> list:
+        """Return X-Y plane azimuth angles at each trajectory step."""
+        return self.azimuth.copy()
+
+    def compute_geometric_misalignment(self, voxel_size_axial=1.0, voxel_size_lateral=1.0,
+                                       slice_index=None, window=1):
+        """Compute fiber misalignment angles from trajectory coordinates.
+
+        Uses finite differences of fiber positions between consecutive slices
+        to determine the local fiber direction, then computes the misalignment
+        angle relative to the axial direction. Structure tensor is NOT used.
+
+        Args:
+            voxel_size_axial: Physical voxel size in the axial (slice) direction.
+            voxel_size_lateral: Physical voxel size in the lateral (d0, d1) direction.
+            slice_index: If specified, compute angles only at this slice.
+                         If None, compute angles at all slices.
+            window: Number of slices for the finite difference.
+                    1 = forward difference (s, s+1),
+                    >1 = central difference over 'window' slices on each side.
+
+        Returns:
+            If slice_index is None:
+                np.ndarray: 1D array of all misalignment angles in degrees.
+            If slice_index is specified:
+                np.ndarray: 1D array of misalignment angles at that slice (one per fiber).
+        """
+        if not self.fiber_trajectories:
+            return np.array([])
+
+        if slice_index is not None:
+            return self._geometric_angles_at_slice(
+                slice_index, voxel_size_axial, voxel_size_lateral, window)
+
+        # All slices
+        angles = []
+        for traj in self.fiber_trajectories:
+            if len(traj) < 2:
+                continue
+            for k in range(len(traj) - 1):
+                s_k, pos_k = traj[k]
+                s_next, pos_next = traj[k + 1]
+                delta_d0 = (pos_next[0] - pos_k[0]) * voxel_size_lateral
+                delta_d1 = (pos_next[1] - pos_k[1]) * voxel_size_lateral
+                delta_z = (s_next - s_k) * voxel_size_axial
+                if abs(delta_z) < 1e-12:
+                    continue
+                lateral = np.sqrt(delta_d0**2 + delta_d1**2)
+                theta = np.degrees(np.arctan2(lateral, abs(delta_z)))
+                angles.append(theta)
+        return np.array(angles)
+
+    def _geometric_angles_at_slice(self, slice_index, voxel_size_axial,
+                                   voxel_size_lateral, window):
+        """Compute geometric misalignment angles at a specific slice."""
+        angles = []
+        for traj in self.fiber_trajectories:
+            if len(traj) < 2:
+                continue
+            # Build slice → index lookup
+            slice_map = {s: idx for idx, (s, _) in enumerate(traj)}
+            if slice_index not in slice_map:
+                continue
+            idx = slice_map[slice_index]
+
+            # Find best backward/forward indices within window
+            idx_back = max(0, idx - window)
+            idx_fwd = min(len(traj) - 1, idx + window)
+            if idx_back == idx_fwd:
+                continue
+
+            s_back, pos_back = traj[idx_back]
+            s_fwd, pos_fwd = traj[idx_fwd]
+            delta_d0 = (pos_fwd[0] - pos_back[0]) * voxel_size_lateral
+            delta_d1 = (pos_fwd[1] - pos_back[1]) * voxel_size_lateral
+            delta_z = (s_fwd - s_back) * voxel_size_axial
+            if abs(delta_z) < 1e-12:
+                continue
+            lateral = np.sqrt(delta_d0**2 + delta_d1**2)
+            theta = np.degrees(np.arctan2(lateral, abs(delta_z)))
+            angles.append(theta)
+        return np.array(angles)
 
     def propagate(
         self,
@@ -327,7 +413,8 @@ class FiberTrajectory:
         stop_at_boundary: bool = True,
         boundary_margin: float = 0.5,
         resample_interval: int = 0,
-        resample_seed: int = None
+        resample_seed: int = None,
+        void_mask: np.ndarray = None
     ) -> None:
         """
         Propagate fibers through all slices based on structure tensor orientation.
@@ -346,9 +433,24 @@ class FiberTrajectory:
             boundary_margin: Margin from boundary to consider as "out of bounds" (in pixels).
             resample_interval: If > 0, resample new fibers in empty regions every N slices.
             resample_seed: Random seed for resampling (uses slice-based seed if None).
+            void_mask: Optional 3D boolean array with shape (z, y, x) indicating void regions.
+                       Fibers entering void regions will be stopped.
         """
         if self.points is None:
             raise ValueError("Fibers not initialized. Call initialize() first.")
+
+        # Clear any existing trajectory data (important for re-computation)
+        # This prevents data from accumulating when propagate is called multiple times
+        self.trajectories = []
+        self.tilt_xz = []
+        self.tilt_yz = []
+        self.azimuth = []
+        # Re-initialize per-fiber data structures
+        n_fibers_init = len(self.points)
+        self.fiber_trajectories = [[] for _ in range(n_fibers_init)]
+        self.fiber_tilt_xz = [[] for _ in range(n_fibers_init)]
+        self.fiber_tilt_yz = [[] for _ in range(n_fibers_init)]
+        self.fiber_azimuth = [[] for _ in range(n_fibers_init)]
 
         # Z-axis propagation (fibers assumed along Z direction)
         # structure_tensor shape is (6, z, y, x)
@@ -361,6 +463,8 @@ class FiberTrajectory:
         logger.info(f"Propagating {n_fibers} fibers along Z-axis through {n_slices} slices...")
         if resample_interval > 0:
             logger.info(f"Resampling enabled every {resample_interval} slices")
+        if void_mask is not None:
+            logger.info(f"Void mask provided: shape {void_mask.shape}, stopping fibers in void regions")
 
         # Compute eigenvectors for all slices (Z-axis propagation)
         eigenvectors = _compute_eigenvectors(structure_tensor)
@@ -385,36 +489,35 @@ class FiberTrajectory:
         v_d1_init = map_coordinates(ev_d1_init, coords_init, order=1, mode='nearest')
         v_axial_init = map_coordinates(ev_axial_init, coords_init, order=1, mode='nearest')
 
-        # Compute initial angles using same definition as Structure Tensor orientation
+        # Compute initial tilt and azimuth angles
         # For fibers aligned along Z-axis:
-        # theta (X-Z): arctan2(v_d0, v_axial) - tilt angle in X-Z plane (0° = aligned with Z)
-        # phi (Y-Z): arctan2(v_d1, v_axial) - tilt angle in Y-Z plane (0° = aligned with Z)
+        # tilt_xz: arctan2(v_x, v_z) - tilt angle in X-Z plane (0° = aligned with Z)
+        # tilt_yz: arctan2(v_y, v_z) - tilt angle in Y-Z plane (0° = aligned with Z)
+        # azimuth: arctan2(v_y, v_x) - azimuth angle in X-Y plane (-180° to 180°)
         # Ensure consistent sign by flipping if v_axial < 0 (fiber direction ambiguity)
         v_axial_sign = np.where(v_axial_init >= 0, 1.0, -1.0)
         v_d0_oriented = v_d0_init * v_axial_sign
         v_d1_oriented = v_d1_init * v_axial_sign
         v_axial_oriented = v_axial_init * v_axial_sign
 
-        angles_init = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))  # X-Z orientation
-        azimuths_init = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))  # Y-Z orientation
+        tilt_xz_init = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))
+        tilt_yz_init = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))
+        azimuth_init = np.rad2deg(np.arctan2(v_d1_init, v_d0_init))
 
-        # True azimuth: arctan2(v_d1, v_d0) in cross-section plane (-180 to 180)
-        azimuth_angles_init = np.rad2deg(np.arctan2(v_d1_init, v_d0_init))
-
-        # Update initial angles in fiber_angles, fiber_azimuths, and fiber_azimuth_angles
+        # Update initial angles in per-fiber data
         for i in range(n_fibers):
-            if i < len(self.fiber_angles) and len(self.fiber_angles[i]) > 0:
-                self.fiber_angles[i][0] = angles_init[i]
-            if i < len(self.fiber_azimuths) and len(self.fiber_azimuths[i]) > 0:
-                self.fiber_azimuths[i][0] = azimuths_init[i]
-            if i < len(self.fiber_azimuth_angles) and len(self.fiber_azimuth_angles[i]) > 0:
-                self.fiber_azimuth_angles[i][0] = azimuth_angles_init[i]
+            if i < len(self.fiber_tilt_xz) and len(self.fiber_tilt_xz[i]) > 0:
+                self.fiber_tilt_xz[i][0] = tilt_xz_init[i]
+            if i < len(self.fiber_tilt_yz) and len(self.fiber_tilt_yz[i]) > 0:
+                self.fiber_tilt_yz[i][0] = tilt_yz_init[i]
+            if i < len(self.fiber_azimuth) and len(self.fiber_azimuth[i]) > 0:
+                self.fiber_azimuth[i][0] = azimuth_init[i]
 
         # Store initial slice data
         self.trajectories.append((0, current_points.copy()))
-        self.angles.append(angles_init)
-        self.azimuths.append(azimuths_init)
-        self.azimuth_angles.append(azimuth_angles_init)
+        self.tilt_xz.append(tilt_xz_init)
+        self.tilt_yz.append(tilt_yz_init)
+        self.azimuth.append(azimuth_init)
 
         for s in range(1, n_slices):
             if s % 50 == 0:
@@ -459,21 +562,20 @@ class FiberTrajectory:
             d_d0 = np.clip(d_d0, -max_displacement, max_displacement)
             d_d1 = np.clip(d_d1, -max_displacement, max_displacement)
 
-            # Compute angles using same definition as Structure Tensor orientation
+            # Compute tilt and azimuth angles
             # For fibers aligned along Z-axis:
-            # theta (X-Z): arctan2(v_d0, v_axial) - tilt angle in X-Z plane (0° = aligned with Z)
-            # phi (Y-Z): arctan2(v_d1, v_axial) - tilt angle in Y-Z plane (0° = aligned with Z)
+            # tilt_xz: arctan2(v_x, v_z) - tilt angle in X-Z plane (0° = aligned with Z)
+            # tilt_yz: arctan2(v_y, v_z) - tilt angle in Y-Z plane (0° = aligned with Z)
+            # azimuth: arctan2(v_y, v_x) - azimuth angle in X-Y plane (-180° to 180°)
             # Ensure consistent sign by flipping if v_axial < 0 (fiber direction ambiguity)
             v_axial_sign = np.where(v_axial >= 0, 1.0, -1.0)
             v_d0_oriented = v_d0 * v_axial_sign
             v_d1_oriented = v_d1 * v_axial_sign
             v_axial_oriented = v_axial * v_axial_sign
 
-            angles = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))  # X-Z orientation
-            azimuths = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))  # Y-Z orientation
-
-            # True azimuth: arctan2(v_d1, v_d0) in cross-section plane (-180 to 180)
-            azimuth_angles = np.rad2deg(np.arctan2(v_d1, v_d0))
+            tilt_xz = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))
+            tilt_yz = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))
+            azimuth = np.rad2deg(np.arctan2(v_d1, v_d0))
 
             # Move points based on direction
             new_points = current_points.copy()
@@ -497,6 +599,23 @@ class FiberTrajectory:
                 stopped_count += np.sum(newly_stopped)
                 active = active & ~out_of_bounds
 
+            # Check for void regions and stop fibers that enter them
+            if void_mask is not None and s < void_mask.shape[0]:
+                void_slice = void_mask[s]  # shape: (y, x)
+                in_void = np.zeros(len(new_points), dtype=bool)
+                for i in range(len(new_points)):
+                    if active[i]:
+                        x_idx = int(np.clip(np.round(new_points[i, 0]), 0, void_slice.shape[1] - 1))
+                        y_idx = int(np.clip(np.round(new_points[i, 1]), 0, void_slice.shape[0] - 1))
+                        in_void[i] = void_slice[y_idx, x_idx]
+                # Mark fibers that entered void regions as inactive
+                newly_stopped_void = active & in_void
+                if np.any(newly_stopped_void):
+                    stopped_count += np.sum(newly_stopped_void)
+                    active = active & ~in_void
+                    if s % 50 == 0 or np.sum(newly_stopped_void) > 10:
+                        logger.debug(f"Slice {s}: {np.sum(newly_stopped_void)} fibers stopped in void regions")
+
             # Resample fibers in empty regions at specified intervals
             if resample_interval > 0 and s % resample_interval == 0:
                 new_fiber_points, new_fiber_count = self._resample_empty_regions(
@@ -511,13 +630,13 @@ class FiberTrajectory:
                     # Extend trajectory storage for new fibers
                     for i in range(new_fiber_count):
                         self.fiber_trajectories.append([(s, new_fiber_points[i].copy())])
-                        self.fiber_angles.append([0.0])
-                        self.fiber_azimuths.append([0.0])
-                        self.fiber_azimuth_angles.append([0.0])
-                    # Update angles/azimuths/azimuth_angles arrays for new fibers
-                    angles = np.concatenate([angles, np.zeros(new_fiber_count)])
-                    azimuths = np.concatenate([azimuths, np.zeros(new_fiber_count)])
-                    azimuth_angles = np.concatenate([azimuth_angles, np.zeros(new_fiber_count)])
+                        self.fiber_tilt_xz.append([0.0])
+                        self.fiber_tilt_yz.append([0.0])
+                        self.fiber_azimuth.append([0.0])
+                    # Update tilt/azimuth arrays for new fibers
+                    tilt_xz = np.concatenate([tilt_xz, np.zeros(new_fiber_count)])
+                    tilt_yz = np.concatenate([tilt_yz, np.zeros(new_fiber_count)])
+                    azimuth = np.concatenate([azimuth, np.zeros(new_fiber_count)])
                     resampled_count += new_fiber_count
                     n_fibers = len(new_points)
 
@@ -537,15 +656,15 @@ class FiberTrajectory:
                         # Check if this fiber already has data for this slice (from resampling)
                         if len(self.fiber_trajectories[i]) == 0 or self.fiber_trajectories[i][-1][0] != s:
                             self.fiber_trajectories[i].append((s, new_points[i].copy()))
-                            self.fiber_angles[i].append(angles[i] if i < len(angles) else 0.0)
-                            self.fiber_azimuths[i].append(azimuths[i] if i < len(azimuths) else 0.0)
-                            self.fiber_azimuth_angles[i].append(azimuth_angles[i] if i < len(azimuth_angles) else 0.0)
+                            self.fiber_tilt_xz[i].append(tilt_xz[i] if i < len(tilt_xz) else 0.0)
+                            self.fiber_tilt_yz[i].append(tilt_yz[i] if i < len(tilt_yz) else 0.0)
+                            self.fiber_azimuth[i].append(azimuth[i] if i < len(azimuth) else 0.0)
 
             # Store trajectory (for backward compatibility, store all points)
             self.trajectories.append((s, new_points.copy()))
-            self.angles.append(angles)
-            self.azimuths.append(azimuths)
-            self.azimuth_angles.append(azimuth_angles)
+            self.tilt_xz.append(tilt_xz)
+            self.tilt_yz.append(tilt_yz)
+            self.azimuth.append(azimuth)
 
             current_points = new_points
 
@@ -568,7 +687,8 @@ class FiberTrajectory:
         stop_at_boundary: bool = True,
         boundary_margin: float = 0.5,
         resample_interval: int = 0,
-        resample_seed: int = None
+        resample_seed: int = None,
+        void_mask: np.ndarray = None
     ) -> None:
         """
         Propagate fibers using 4th-order Runge-Kutta integration (RK4).
@@ -586,9 +706,24 @@ class FiberTrajectory:
             boundary_margin: Margin from boundary to consider as "out of bounds" (in pixels).
             resample_interval: If > 0, resample new fibers in empty regions every N slices.
             resample_seed: Random seed for resampling (uses slice-based seed if None).
+            void_mask: Optional 3D boolean array with shape (z, y, x) indicating void regions.
+                       Fibers entering void regions will be stopped.
         """
         if self.points is None:
             raise ValueError("Fibers not initialized. Call initialize() first.")
+
+        # Clear any existing trajectory data (important for re-computation)
+        # This prevents data from accumulating when propagate is called multiple times
+        self.trajectories = []
+        self.tilt_xz = []
+        self.tilt_yz = []
+        self.azimuth = []
+        # Re-initialize per-fiber data structures
+        n_fibers_init = len(self.points)
+        self.fiber_trajectories = [[] for _ in range(n_fibers_init)]
+        self.fiber_tilt_xz = [[] for _ in range(n_fibers_init)]
+        self.fiber_tilt_yz = [[] for _ in range(n_fibers_init)]
+        self.fiber_azimuth = [[] for _ in range(n_fibers_init)]
 
         # Z-axis propagation (fibers assumed along Z direction)
         # structure_tensor shape is (6, z, y, x)
@@ -622,36 +757,35 @@ class FiberTrajectory:
         v_d1_init = map_coordinates(ev_d1_init, coords_init, order=1, mode='nearest')
         v_axial_init = map_coordinates(ev_axial_init, coords_init, order=1, mode='nearest')
 
-        # Compute initial angles using same definition as Structure Tensor orientation
+        # Compute initial tilt and azimuth angles
         # For fibers aligned along Z-axis:
-        # theta (X-Z): arctan2(v_d0, v_axial) - tilt angle in X-Z plane (0° = aligned with Z)
-        # phi (Y-Z): arctan2(v_d1, v_axial) - tilt angle in Y-Z plane (0° = aligned with Z)
+        # tilt_xz: arctan2(v_x, v_z) - tilt angle in X-Z plane (0° = aligned with Z)
+        # tilt_yz: arctan2(v_y, v_z) - tilt angle in Y-Z plane (0° = aligned with Z)
+        # azimuth: arctan2(v_y, v_x) - azimuth angle in X-Y plane (-180° to 180°)
         # Ensure consistent sign by flipping if v_axial < 0 (fiber direction ambiguity)
         v_axial_sign = np.where(v_axial_init >= 0, 1.0, -1.0)
         v_d0_oriented = v_d0_init * v_axial_sign
         v_d1_oriented = v_d1_init * v_axial_sign
         v_axial_oriented = v_axial_init * v_axial_sign
 
-        angles_init = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))  # X-Z orientation
-        azimuths_init = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))  # Y-Z orientation
+        tilt_xz_init = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))
+        tilt_yz_init = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))
+        azimuth_init = np.rad2deg(np.arctan2(v_d1_init, v_d0_init))
 
-        # True azimuth: arctan2(v_d1, v_d0) in cross-section plane (-180 to 180)
-        azimuth_angles_init = np.rad2deg(np.arctan2(v_d1_init, v_d0_init))
-
-        # Update initial angles in fiber_angles, fiber_azimuths, and fiber_azimuth_angles
+        # Update initial angles in per-fiber data
         for i in range(n_fibers):
-            if i < len(self.fiber_angles) and len(self.fiber_angles[i]) > 0:
-                self.fiber_angles[i][0] = angles_init[i]
-            if i < len(self.fiber_azimuths) and len(self.fiber_azimuths[i]) > 0:
-                self.fiber_azimuths[i][0] = azimuths_init[i]
-            if i < len(self.fiber_azimuth_angles) and len(self.fiber_azimuth_angles[i]) > 0:
-                self.fiber_azimuth_angles[i][0] = azimuth_angles_init[i]
+            if i < len(self.fiber_tilt_xz) and len(self.fiber_tilt_xz[i]) > 0:
+                self.fiber_tilt_xz[i][0] = tilt_xz_init[i]
+            if i < len(self.fiber_tilt_yz) and len(self.fiber_tilt_yz[i]) > 0:
+                self.fiber_tilt_yz[i][0] = tilt_yz_init[i]
+            if i < len(self.fiber_azimuth) and len(self.fiber_azimuth[i]) > 0:
+                self.fiber_azimuth[i][0] = azimuth_init[i]
 
         # Store initial slice data
         self.trajectories.append((0, current_points.copy()))
-        self.angles.append(angles_init)
-        self.azimuths.append(azimuths_init)
-        self.azimuth_angles.append(azimuth_angles_init)
+        self.tilt_xz.append(tilt_xz_init)
+        self.tilt_yz.append(tilt_yz_init)
+        self.azimuth.append(azimuth_init)
 
         def get_displacement(points, slice_idx):
             """Get displacement field at given points and slice index (with fractional support)."""
@@ -727,21 +861,20 @@ class FiberTrajectory:
             # RK4 update: y_{n+1} = y_n + h/6 * (k1 + 2*k2 + 2*k3 + k4)
             new_points = current_points + (h / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
-            # Compute angles using same definition as Structure Tensor orientation
+            # Compute tilt and azimuth angles
             # For fibers aligned along Z-axis:
-            # theta (X-Z): arctan2(v_d0, v_axial) - tilt angle in X-Z plane (0° = aligned with Z)
-            # phi (Y-Z): arctan2(v_d1, v_axial) - tilt angle in Y-Z plane (0° = aligned with Z)
+            # tilt_xz: arctan2(v_x, v_z) - tilt angle in X-Z plane (0° = aligned with Z)
+            # tilt_yz: arctan2(v_y, v_z) - tilt angle in Y-Z plane (0° = aligned with Z)
+            # azimuth: arctan2(v_y, v_x) - azimuth angle in X-Y plane (-180° to 180°)
             # Ensure consistent sign by flipping if v_axial < 0 (fiber direction ambiguity)
             v_axial_sign = np.where(v_axial >= 0, 1.0, -1.0)
             v_d0_oriented = v_d0 * v_axial_sign
             v_d1_oriented = v_d1 * v_axial_sign
             v_axial_oriented = v_axial * v_axial_sign
 
-            angles = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))  # X-Z orientation
-            azimuths = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))  # Y-Z orientation
-
-            # True azimuth: arctan2(v_d1, v_d0) in cross-section plane (-180 to 180)
-            azimuth_angles = np.rad2deg(np.arctan2(v_d1, v_d0))
+            tilt_xz = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))
+            tilt_yz = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))
+            azimuth = np.rad2deg(np.arctan2(v_d1, v_d0))
 
             # Check for boundary crossing
             # Stop tracking when fiber center approaches boundary by fiber radius
@@ -759,6 +892,23 @@ class FiberTrajectory:
                 stopped_count += np.sum(newly_stopped)
                 active = active & ~out_of_bounds
 
+            # Check for void regions and stop fibers that enter them
+            if void_mask is not None and s < void_mask.shape[0]:
+                void_slice = void_mask[s]  # shape: (y, x)
+                in_void = np.zeros(len(new_points), dtype=bool)
+                for i in range(len(new_points)):
+                    if active[i]:
+                        x_idx = int(np.clip(np.round(new_points[i, 0]), 0, void_slice.shape[1] - 1))
+                        y_idx = int(np.clip(np.round(new_points[i, 1]), 0, void_slice.shape[0] - 1))
+                        in_void[i] = void_slice[y_idx, x_idx]
+                # Mark fibers that entered void regions as inactive
+                newly_stopped_void = active & in_void
+                if np.any(newly_stopped_void):
+                    stopped_count += np.sum(newly_stopped_void)
+                    active = active & ~in_void
+                    if s % 50 == 0 or np.sum(newly_stopped_void) > 10:
+                        logger.debug(f"RK4 Slice {s}: {np.sum(newly_stopped_void)} fibers stopped in void regions")
+
             # Resample fibers in empty regions
             if resample_interval > 0 and s % resample_interval == 0:
                 new_fiber_points, new_fiber_count = self._resample_empty_regions(
@@ -771,12 +921,12 @@ class FiberTrajectory:
                     active = np.concatenate([active, np.ones(new_fiber_count, dtype=bool)])
                     for i in range(new_fiber_count):
                         self.fiber_trajectories.append([(s, new_fiber_points[i].copy())])
-                        self.fiber_angles.append([0.0])
-                        self.fiber_azimuths.append([0.0])
-                        self.fiber_azimuth_angles.append([0.0])
-                    angles = np.concatenate([angles, np.zeros(new_fiber_count)])
-                    azimuths = np.concatenate([azimuths, np.zeros(new_fiber_count)])
-                    azimuth_angles = np.concatenate([azimuth_angles, np.zeros(new_fiber_count)])
+                        self.fiber_tilt_xz.append([0.0])
+                        self.fiber_tilt_yz.append([0.0])
+                        self.fiber_azimuth.append([0.0])
+                    tilt_xz = np.concatenate([tilt_xz, np.zeros(new_fiber_count)])
+                    tilt_yz = np.concatenate([tilt_yz, np.zeros(new_fiber_count)])
+                    azimuth = np.concatenate([azimuth, np.zeros(new_fiber_count)])
                     resampled_count += new_fiber_count
                     n_fibers = len(new_points)
 
@@ -794,14 +944,14 @@ class FiberTrajectory:
                     if active[i] or not stop_at_boundary:
                         if len(self.fiber_trajectories[i]) == 0 or self.fiber_trajectories[i][-1][0] != s:
                             self.fiber_trajectories[i].append((s, new_points[i].copy()))
-                            self.fiber_angles[i].append(angles[i] if i < len(angles) else 0.0)
-                            self.fiber_azimuths[i].append(azimuths[i] if i < len(azimuths) else 0.0)
-                            self.fiber_azimuth_angles[i].append(azimuth_angles[i] if i < len(azimuth_angles) else 0.0)
+                            self.fiber_tilt_xz[i].append(tilt_xz[i] if i < len(tilt_xz) else 0.0)
+                            self.fiber_tilt_yz[i].append(tilt_yz[i] if i < len(tilt_yz) else 0.0)
+                            self.fiber_azimuth[i].append(azimuth[i] if i < len(azimuth) else 0.0)
 
             self.trajectories.append((s, new_points.copy()))
-            self.angles.append(angles)
-            self.azimuths.append(azimuths)
-            self.azimuth_angles.append(azimuth_angles)
+            self.tilt_xz.append(tilt_xz)
+            self.tilt_yz.append(tilt_yz)
+            self.azimuth.append(azimuth)
 
             current_points = new_points
 
@@ -912,36 +1062,35 @@ class FiberTrajectory:
         v_d1_init = map_coordinates(ev_d1_init, coords_init, order=1, mode='nearest')
         v_axial_init = map_coordinates(ev_axial_init, coords_init, order=1, mode='nearest')
 
-        # Compute initial angles using same definition as Structure Tensor orientation
+        # Compute initial tilt and azimuth angles
         # For fibers aligned along Z-axis:
-        # theta (X-Z): arctan2(v_d0, v_axial) - tilt angle in X-Z plane (0° = aligned with Z)
-        # phi (Y-Z): arctan2(v_d1, v_axial) - tilt angle in Y-Z plane (0° = aligned with Z)
+        # tilt_xz: arctan2(v_x, v_z) - tilt angle in X-Z plane (0° = aligned with Z)
+        # tilt_yz: arctan2(v_y, v_z) - tilt angle in Y-Z plane (0° = aligned with Z)
+        # azimuth: arctan2(v_y, v_x) - azimuth angle in X-Y plane (-180° to 180°)
         # Ensure consistent sign by flipping if v_axial < 0 (fiber direction ambiguity)
         v_axial_sign = np.where(v_axial_init >= 0, 1.0, -1.0)
         v_d0_oriented = v_d0_init * v_axial_sign
         v_d1_oriented = v_d1_init * v_axial_sign
         v_axial_oriented = v_axial_init * v_axial_sign
 
-        angles_init = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))  # X-Z orientation
-        azimuths_init = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))  # Y-Z orientation
+        tilt_xz_init = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))
+        tilt_yz_init = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))
+        azimuth_init = np.rad2deg(np.arctan2(v_d1_init, v_d0_init))
 
-        # True azimuth: arctan2(v_d1, v_d0) in cross-section plane (-180 to 180)
-        azimuth_angles_init = np.rad2deg(np.arctan2(v_d1_init, v_d0_init))
-
-        # Update initial angles in fiber_angles, fiber_azimuths, and fiber_azimuth_angles
+        # Update initial angles in per-fiber data
         for i in range(n_fibers):
-            if i < len(self.fiber_angles) and len(self.fiber_angles[i]) > 0:
-                self.fiber_angles[i][0] = angles_init[i]
-            if i < len(self.fiber_azimuths) and len(self.fiber_azimuths[i]) > 0:
-                self.fiber_azimuths[i][0] = azimuths_init[i]
-            if i < len(self.fiber_azimuth_angles) and len(self.fiber_azimuth_angles[i]) > 0:
-                self.fiber_azimuth_angles[i][0] = azimuth_angles_init[i]
+            if i < len(self.fiber_tilt_xz) and len(self.fiber_tilt_xz[i]) > 0:
+                self.fiber_tilt_xz[i][0] = tilt_xz_init[i]
+            if i < len(self.fiber_tilt_yz) and len(self.fiber_tilt_yz[i]) > 0:
+                self.fiber_tilt_yz[i][0] = tilt_yz_init[i]
+            if i < len(self.fiber_azimuth) and len(self.fiber_azimuth[i]) > 0:
+                self.fiber_azimuth[i][0] = azimuth_init[i]
 
         # Store initial slice data
         self.trajectories.append((0, current_points.copy()))
-        self.angles.append(angles_init)
-        self.azimuths.append(azimuths_init)
-        self.azimuth_angles.append(azimuth_angles_init)
+        self.tilt_xz.append(tilt_xz_init)
+        self.tilt_yz.append(tilt_yz_init)
+        self.azimuth.append(azimuth_init)
 
         def get_displacement(points, slice_idx):
             """Get displacement field at given points and slice index."""
@@ -1081,9 +1230,9 @@ class FiberTrajectory:
 
                                 # Initialize new fiber trajectory data
                                 self.fiber_trajectories.append([(s, new_center.copy())])
-                                self.fiber_angles.append([0.0])  # Will be updated
-                                self.fiber_azimuths.append([0.0])  # Will be updated
-                                self.fiber_azimuth_angles.append([0.0])  # Will be updated
+                                self.fiber_tilt_xz.append([0.0])  # Will be updated
+                                self.fiber_tilt_yz.append([0.0])  # Will be updated
+                                self.fiber_azimuth.append([0.0])  # Will be updated
 
                                 new_fibers_added += 1
                                 new_fiber_count += 1
@@ -1091,18 +1240,18 @@ class FiberTrajectory:
                             if new_fibers_added > 0:
                                 # Rebuild active_tree for relaxation
                                 n_fibers = len(current_points)
-                                # Extend angles/azimuths/azimuth_angles arrays for this slice
-                                angles = np.zeros(n_fibers)
-                                azimuths = np.zeros(n_fibers)
-                                azimuth_angles = np.zeros(n_fibers)
+                                # Extend tilt/azimuth arrays for this slice
+                                tilt_xz = np.zeros(n_fibers)
+                                tilt_yz = np.zeros(n_fibers)
+                                azimuth = np.zeros(n_fibers)
 
             # Get current number of fibers (may have increased due to new fibers)
             n_fibers_current = len(predicted_points)
 
-            # Compute angles using same definition as Structure Tensor orientation
+            # Compute tilt and azimuth angles
             # For fibers aligned along Z-axis:
-            # theta (X-Z): arctan2(v_d0, v_axial) - tilt angle in X-Z plane (0° = aligned with Z)
-            # phi (Y-Z): arctan2(v_d1, v_axial) - tilt angle in Y-Z plane (0° = aligned with Z)
+            # tilt_xz: arctan2(v_x, v_z) - tilt angle in X-Z plane (0° = aligned with Z)
+            # tilt_yz: arctan2(v_y, v_z) - tilt angle in Y-Z plane (0° = aligned with Z)
             if len(v_d0) < n_fibers_current:
                 # New fibers were added, need to extend angle arrays
                 # Recompute displacement for all current points
@@ -1112,20 +1261,18 @@ class FiberTrajectory:
                 v_d0_oriented = v_d0_all * v_axial_sign
                 v_d1_oriented = v_d1_all * v_axial_sign
                 v_axial_oriented = v_axial_all * v_axial_sign
-                angles = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))  # X-Z orientation
-                azimuths = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))  # Y-Z orientation
-                # True azimuth: arctan2(v_d1, v_d0) in cross-section plane (-180 to 180)
-                azimuth_angles = np.rad2deg(np.arctan2(v_d1_all, v_d0_all))
+                tilt_xz = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))
+                tilt_yz = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))
+                azimuth = np.rad2deg(np.arctan2(v_d1_all, v_d0_all))
             else:
                 # Ensure consistent sign by flipping if v_axial < 0 (fiber direction ambiguity)
                 v_axial_sign = np.where(v_axial >= 0, 1.0, -1.0)
                 v_d0_oriented = v_d0 * v_axial_sign
                 v_d1_oriented = v_d1 * v_axial_sign
                 v_axial_oriented = v_axial * v_axial_sign
-                angles = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))  # X-Z orientation
-                azimuths = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))  # Y-Z orientation
-                # True azimuth: arctan2(v_d1, v_d0) in cross-section plane (-180 to 180)
-                azimuth_angles = np.rad2deg(np.arctan2(v_d1, v_d0))
+                tilt_xz = np.rad2deg(np.arctan2(v_d0_oriented, v_axial_oriented))
+                tilt_yz = np.rad2deg(np.arctan2(v_d1_oriented, v_axial_oriented))
+                azimuth = np.rad2deg(np.arctan2(v_d1, v_d0))
 
             # Check boundaries - stop tracking when fiber center approaches boundary by fiber radius
             if stop_at_boundary:
@@ -1153,18 +1300,18 @@ class FiberTrajectory:
 
             # Store per-fiber trajectory data
             for i in range(n_fibers_current):
-                if i < len(self.fiber_trajectories) and i < len(self.fiber_azimuth_angles):
+                if i < len(self.fiber_trajectories) and i < len(self.fiber_azimuth):
                     if active[i] or not stop_at_boundary:
                         if len(self.fiber_trajectories[i]) == 0 or self.fiber_trajectories[i][-1][0] != s:
                             self.fiber_trajectories[i].append((s, predicted_points[i].copy()))
-                            self.fiber_angles[i].append(angles[i] if i < len(angles) else 0.0)
-                            self.fiber_azimuths[i].append(azimuths[i] if i < len(azimuths) else 0.0)
-                            self.fiber_azimuth_angles[i].append(azimuth_angles[i] if i < len(azimuth_angles) else 0.0)
+                            self.fiber_tilt_xz[i].append(tilt_xz[i] if i < len(tilt_xz) else 0.0)
+                            self.fiber_tilt_yz[i].append(tilt_yz[i] if i < len(tilt_yz) else 0.0)
+                            self.fiber_azimuth[i].append(azimuth[i] if i < len(azimuth) else 0.0)
 
             self.trajectories.append((s, predicted_points.copy()))
-            self.angles.append(angles)
-            self.azimuths.append(azimuths)
-            self.azimuth_angles.append(azimuth_angles)
+            self.tilt_xz.append(tilt_xz)
+            self.tilt_yz.append(tilt_yz)
+            self.azimuth.append(azimuth)
 
             current_points = predicted_points
 
@@ -1272,25 +1419,12 @@ class FiberTrajectory:
         """
         z_min, z_max, y_min, y_max, x_min, x_max = self.vf_roi_bounds
 
-        # Get Vf slice for current position
-        if self.propagation_axis == 2:  # Z-axis
-            slice_idx = current_slice - z_min
-            if 0 <= slice_idx < self.vf_map.shape[0]:
-                vf_slice = self.vf_map[slice_idx]  # (y_roi, x_roi)
-            else:
-                vf_slice = np.mean(self.vf_map, axis=0)
-        elif self.propagation_axis == 0:  # X-axis
-            slice_idx = current_slice - x_min
-            if 0 <= slice_idx < self.vf_map.shape[2]:
-                vf_slice = self.vf_map[:, :, slice_idx]  # (z_roi, y_roi)
-            else:
-                vf_slice = np.mean(self.vf_map, axis=2)
-        else:  # Y-axis
-            slice_idx = current_slice - y_min
-            if 0 <= slice_idx < self.vf_map.shape[1]:
-                vf_slice = self.vf_map[:, slice_idx, :]  # (z_roi, x_roi)
-            else:
-                vf_slice = np.mean(self.vf_map, axis=1)
+        # Get Vf slice for current Z position
+        slice_idx = current_slice - z_min
+        if 0 <= slice_idx < self.vf_map.shape[0]:
+            vf_slice = self.vf_map[slice_idx]  # (y_roi, x_roi)
+        else:
+            vf_slice = np.mean(self.vf_map, axis=0)
 
         # Calculate spacing from Vf using square packing formula
         # s = d * sqrt(π/4) / sqrt(Vf) ≈ d * 0.8862 / sqrt(Vf)
@@ -1303,22 +1437,11 @@ class FiberTrajectory:
 
         def get_local_spacing(x, y):
             """Get local required spacing at a point (local coordinates)."""
-            # Points are in local ROI coordinates, Vf map is also local
-            if self.propagation_axis == 2:  # Z-axis (XY plane)
-                vf_x = int(x)
-                vf_y = int(y)
-                if 0 <= vf_y < spacing_map.shape[0] and 0 <= vf_x < spacing_map.shape[1]:
-                    return spacing_map[vf_y, vf_x]
-            elif self.propagation_axis == 0:  # X-axis (YZ plane)
-                vf_z = int(y)
-                vf_y = int(x)
-                if 0 <= vf_z < spacing_map.shape[0] and 0 <= vf_y < spacing_map.shape[1]:
-                    return spacing_map[vf_z, vf_y]
-            else:  # Y-axis (XZ plane)
-                vf_z = int(y)
-                vf_x = int(x)
-                if 0 <= vf_z < spacing_map.shape[0] and 0 <= vf_x < spacing_map.shape[1]:
-                    return spacing_map[vf_z, vf_x]
+            # Points are in local ROI coordinates (XY plane), Vf map is also local
+            vf_x = int(x)
+            vf_y = int(y)
+            if 0 <= vf_y < spacing_map.shape[0] and 0 <= vf_x < spacing_map.shape[1]:
+                return spacing_map[vf_y, vf_x]
             return max_spacing
 
         # Generate candidates in high-Vf regions and check if they should exist
@@ -1396,35 +1519,16 @@ class FiberTrajectory:
 
         weights = np.ones(len(points)) * 0.1  # Default low weight
 
-        # Get the Vf slice for current position
-        # Points are in local ROI coordinates, Vf map is also local
-        if self.propagation_axis == 2:  # Z-axis propagation
-            slice_idx = current_slice  # Local slice index
-            if 0 <= slice_idx < self.vf_map.shape[0]:
-                vf_slice = self.vf_map[slice_idx]  # Shape: (y_roi, x_roi)
-                for i, pt in enumerate(points):
-                    vf_x = int(pt[0])
-                    vf_y = int(pt[1])
-                    if 0 <= vf_y < vf_slice.shape[0] and 0 <= vf_x < vf_slice.shape[1]:
-                        weights[i] = max(vf_slice[vf_y, vf_x], 0.01)
-        elif self.propagation_axis == 0:  # X-axis propagation
-            slice_idx = current_slice
-            if 0 <= slice_idx < self.vf_map.shape[2]:
-                vf_slice = self.vf_map[:, :, slice_idx]  # Shape: (z_roi, y_roi)
-                for i, pt in enumerate(points):
-                    vf_y = int(pt[0])
-                    vf_z = int(pt[1])
-                    if 0 <= vf_z < vf_slice.shape[0] and 0 <= vf_y < vf_slice.shape[1]:
-                        weights[i] = max(vf_slice[vf_z, vf_y], 0.01)
-        else:  # Y-axis propagation
-            slice_idx = current_slice
-            if 0 <= slice_idx < self.vf_map.shape[1]:
-                vf_slice = self.vf_map[:, slice_idx, :]  # Shape: (z_roi, x_roi)
-                for i, pt in enumerate(points):
-                    vf_x = int(pt[0])
-                    vf_z = int(pt[1])
-                    if 0 <= vf_z < vf_slice.shape[0] and 0 <= vf_x < vf_slice.shape[1]:
-                        weights[i] = max(vf_slice[vf_z, vf_x], 0.01)
+        # Get the Vf slice for current Z position
+        # Points are in local ROI coordinates (XY plane), Vf map is also local
+        slice_idx = current_slice  # Local slice index
+        if 0 <= slice_idx < self.vf_map.shape[0]:
+            vf_slice = self.vf_map[slice_idx]  # Shape: (y_roi, x_roi)
+            for i, pt in enumerate(points):
+                vf_x = int(pt[0])
+                vf_y = int(pt[1])
+                if 0 <= vf_y < vf_slice.shape[0] and 0 <= vf_x < vf_slice.shape[1]:
+                    weights[i] = max(vf_slice[vf_y, vf_x], 0.01)
 
         return weights
 
@@ -1472,13 +1576,8 @@ class FiberTrajectory:
         z_min, z_max, y_min, y_max, x_min, x_max = vf_roi_bounds
         dim0, dim1 = cross_section_dims
 
-        # Use the first slice of Vf map for initial fiber placement
-        if self.propagation_axis == 0:  # X-axis propagation, sample in YZ plane
-            vf_2d = vf_map[:, :, 0]  # First X slice, shape: (z_roi, y_roi)
-        elif self.propagation_axis == 1:  # Y-axis propagation, sample in XZ plane
-            vf_2d = vf_map[:, 0, :]  # First Y slice, shape: (z_roi, x_roi)
-        else:  # Z-axis propagation, sample in XY plane
-            vf_2d = vf_map[0, :, :]  # First Z slice, shape: (y_roi, x_roi)
+        # Use the first Z slice of Vf map for initial fiber placement (XY plane)
+        vf_2d = vf_map[0, :, :]  # First Z slice, shape: (y_roi, x_roi)
 
         self._log(f"Vf map 2D shape: {vf_2d.shape}, range: [{vf_2d.min():.3f}, {vf_2d.max():.3f}]")
 
@@ -1549,33 +1648,17 @@ class FiberTrajectory:
 
         def get_local_spacing(x, y):
             """Get required spacing at position (x, y) based on local Vf."""
-            if self.propagation_axis == 2:  # Z-axis (XY plane)
-                vf_x = int(np.clip(x, 0, vf_2d.shape[1] - 1))
-                vf_y = int(np.clip(y, 0, vf_2d.shape[0] - 1))
-                return spacing_2d[vf_y, vf_x]
-            elif self.propagation_axis == 0:  # X-axis (YZ plane)
-                vf_z = int(np.clip(y, 0, vf_2d.shape[0] - 1))
-                vf_y = int(np.clip(x, 0, vf_2d.shape[1] - 1))
-                return spacing_2d[vf_z, vf_y]
-            else:  # Y-axis (XZ plane)
-                vf_z = int(np.clip(y, 0, vf_2d.shape[0] - 1))
-                vf_x = int(np.clip(x, 0, vf_2d.shape[1] - 1))
-                return spacing_2d[vf_z, vf_x]
+            # XY plane: x corresponds to vf_x, y corresponds to vf_y
+            vf_x = int(np.clip(x, 0, vf_2d.shape[1] - 1))
+            vf_y = int(np.clip(y, 0, vf_2d.shape[0] - 1))
+            return spacing_2d[vf_y, vf_x]
 
         def is_in_valid_region(x, y):
             """Check if point is in valid (non-NaN) region of Vf map."""
-            if self.propagation_axis == 2:  # Z-axis (XY plane)
-                vf_x = int(np.clip(x, 0, valid_mask.shape[1] - 1))
-                vf_y = int(np.clip(y, 0, valid_mask.shape[0] - 1))
-                return valid_mask[vf_y, vf_x]
-            elif self.propagation_axis == 0:  # X-axis (YZ plane)
-                vf_z = int(np.clip(y, 0, valid_mask.shape[0] - 1))
-                vf_y = int(np.clip(x, 0, valid_mask.shape[1] - 1))
-                return valid_mask[vf_z, vf_y]
-            else:  # Y-axis (XZ plane)
-                vf_z = int(np.clip(y, 0, valid_mask.shape[0] - 1))
-                vf_x = int(np.clip(x, 0, valid_mask.shape[1] - 1))
-                return valid_mask[vf_z, vf_x]
+            # XY plane: x corresponds to vf_x, y corresponds to vf_y
+            vf_x = int(np.clip(x, 0, valid_mask.shape[1] - 1))
+            vf_y = int(np.clip(y, 0, valid_mask.shape[0] - 1))
+            return valid_mask[vf_y, vf_x]
 
         def is_valid_point(x, y):
             """Check if point satisfies variable-distance constraint.
@@ -1764,36 +1847,20 @@ class FiberTrajectory:
         z_min, z_max, y_min, y_max, x_min, x_max = vf_roi_bounds
         dim0, dim1 = cross_section_dims
 
-        # Compute mean Vf along propagation axis to get 2D weight map
+        # Compute mean Vf along Z-axis to get 2D weight map (XY plane)
         # vf_map shape: (z_roi, y_roi, x_roi)
-        if self.propagation_axis == 0:  # X-axis propagation, sample in YZ plane
-            vf_2d = np.mean(vf_map, axis=2)  # Shape: (z_roi, y_roi)
-        elif self.propagation_axis == 1:  # Y-axis propagation, sample in XZ plane
-            vf_2d = np.mean(vf_map, axis=1)  # Shape: (z_roi, x_roi)
-        else:  # Z-axis propagation, sample in XY plane
-            vf_2d = np.mean(vf_map, axis=0)  # Shape: (y_roi, x_roi)
+        vf_2d = np.mean(vf_map, axis=0)  # Shape: (y_roi, x_roi)
 
         # Compute local Vf for each point
         local_vf = np.zeros(len(points))
         for i, pt in enumerate(points):
             x, y = pt[0], pt[1]
 
-            # Map point coordinates to vf_2d indices
-            if self.propagation_axis == 2:  # Z-axis propagation (XY plane)
-                vf_x = int(x) - x_min
-                vf_y = int(y) - y_min
-                if 0 <= vf_y < vf_2d.shape[0] and 0 <= vf_x < vf_2d.shape[1]:
-                    local_vf[i] = vf_2d[vf_y, vf_x]
-            elif self.propagation_axis == 0:  # X-axis propagation (YZ plane)
-                vf_z = int(y) - z_min
-                vf_y = int(x) - y_min
-                if 0 <= vf_z < vf_2d.shape[0] and 0 <= vf_y < vf_2d.shape[1]:
-                    local_vf[i] = vf_2d[vf_z, vf_y]
-            else:  # Y-axis propagation (XZ plane)
-                vf_z = int(y) - z_min
-                vf_x = int(x) - x_min
-                if 0 <= vf_z < vf_2d.shape[0] and 0 <= vf_x < vf_2d.shape[1]:
-                    local_vf[i] = vf_2d[vf_z, vf_x]
+            # Map point coordinates to vf_2d indices (XY plane)
+            vf_x = int(x) - x_min
+            vf_y = int(y) - y_min
+            if 0 <= vf_y < vf_2d.shape[0] and 0 <= vf_x < vf_2d.shape[1]:
+                local_vf[i] = vf_2d[vf_y, vf_x]
 
         # Simple approach: sort by Vf and take top num_fibers
         # This ensures high-Vf regions have more fibers
@@ -2025,15 +2092,14 @@ class FiberTrajectory:
                     fiber_positions[s] = {}
                 fiber_positions[s][fiber_idx] = pos
 
-        # Build a lookup for angles at each slice (from existing angles data)
-        # angles[slice_idx] contains angles for all fibers at that slice
-        old_angles = self.angles if self.angles else []
-        old_azimuths = self.azimuths if self.azimuths else []
+        # Build a lookup for tilt angles at each slice (from existing data)
+        old_tilt_xz = self.tilt_xz if self.tilt_xz else []
+        old_tilt_yz = self.tilt_yz if self.tilt_yz else []
 
         # Rebuild trajectories - index by slice order (0, 1, 2, ...)
         new_trajectories = []
-        new_angles = []
-        new_azimuths = []
+        new_tilt_xz = []
+        new_tilt_yz = []
 
         for slice_idx, s in enumerate(sorted_slices):
             if s not in fiber_positions:
@@ -2051,75 +2117,83 @@ class FiberTrajectory:
 
             new_trajectories.append((slice_idx, points))
 
-            # Copy angles from old data if available
-            if slice_idx < len(old_angles):
-                new_angles.append(old_angles[slice_idx])
+            # Copy tilt angles from old data if available
+            if slice_idx < len(old_tilt_xz):
+                new_tilt_xz.append(old_tilt_xz[slice_idx])
             else:
-                new_angles.append(np.zeros(n_fibers))
+                new_tilt_xz.append(np.zeros(n_fibers))
 
-            if slice_idx < len(old_azimuths):
-                new_azimuths.append(old_azimuths[slice_idx])
+            if slice_idx < len(old_tilt_yz):
+                new_tilt_yz.append(old_tilt_yz[slice_idx])
             else:
-                new_azimuths.append(np.zeros(n_fibers))
+                new_tilt_yz.append(np.zeros(n_fibers))
 
         self.trajectories = new_trajectories
-        self.angles = new_angles
-        self.azimuths = new_azimuths
+        self.tilt_xz = new_tilt_xz
+        self.tilt_yz = new_tilt_yz
 
 
 def _compute_eigenvectors(structure_tensor: np.ndarray) -> np.ndarray:
     """
     Compute eigenvectors (minimum eigenvalue) from structure tensor.
 
-    Fibers are assumed to be aligned along the Z-axis.
+    Array convention: (axial, d1, d0)
+        - axial: Fiber axis direction (propagation direction)
+        - d1: Cross-section first direction (row)
+        - d0: Cross-section second direction (column)
 
     Args:
-        structure_tensor: 4D array with shape (6, z, y, x).
+        structure_tensor: 4D array with shape (6, axial, d1, d0).
 
     Returns:
-        Array with shape (4, z, y, x):
-        - [0]: x component (perpendicular to Z)
-        - [1]: y component (perpendicular to Z)
-        - [2]: z component (along propagation axis)
+        Array with shape (4, axial, d1, d0):
+        - [0]: v_d0 component (perpendicular to axial, column direction)
+        - [1]: v_d1 component (perpendicular to axial, row direction)
+        - [2]: v_axial component (along propagation axis)
         - [3]: anisotropy (confidence) value
     """
-    # Propagation axis is always Z (index 2)
-    return _compute_eigenvectors_numba(structure_tensor, 2)
+    return _compute_eigenvectors_numba(structure_tensor)
 
 
 @numba.njit(parallel=True, cache=True)
-def _compute_eigenvectors_numba(structure_tensor: np.ndarray, propagation_axis: int) -> np.ndarray:
+def _compute_eigenvectors_numba(structure_tensor: np.ndarray) -> np.ndarray:
     """
-    Numba-accelerated eigenvector computation.
+    Numba-accelerated eigenvector computation for fiber trajectory propagation.
+
+    Array convention: (axial, d1, d0)
+        - axial: Fiber axis direction (propagation direction)
+        - d1: Cross-section first direction (row)
+        - d0: Cross-section second direction (column)
+
+    Structure tensor components: [A_aa, A_a1, A_a0, A_11, A_10, A_00]
+    Eigenvector components: [v_axial, v_d1, v_d0]
 
     Args:
-        structure_tensor: 4D array with shape (6, z, y, x).
-        propagation_axis: 0=X, 1=Y, 2=Z (which axis fibers are aligned with).
+        structure_tensor: 4D array with shape (6, axial, d1, d0).
 
     Returns:
-        Array with shape (4, z, y, x):
-        - For Z-axis propagation: [x, y, z, anisotropy]
-        - For Y-axis propagation: [x, z, y, anisotropy]
-        - For X-axis propagation: [z, y, x, anisotropy]
+        Array with shape (4, axial, d1, d0): [v_d0, v_d1, v_axial, anisotropy]
+        Note: Output order is [d0, d1, axial] for cross-section sampling convenience.
     """
+    # Structure tensor component indices: 0=axial, 1=d1, 2=d0
     symmetricComponents3d = [[0, 0], [0, 1], [0, 2], [1, 1], [1, 2], [2, 2]]
 
-    z_size = structure_tensor.shape[1]
-    y_size = structure_tensor.shape[2]
-    x_size = structure_tensor.shape[3]
+    n_axial = structure_tensor.shape[1]
+    n_d1 = structure_tensor.shape[2]
+    n_d0 = structure_tensor.shape[3]
 
     # Store eigenvector components and anisotropy
-    eigenvectors = np.zeros((4, z_size, y_size, x_size), dtype=np.float32)
+    eigenvectors = np.zeros((4, n_axial, n_d1, n_d0), dtype=np.float32)
 
-    for z in numba.prange(z_size):
-        for y in range(y_size):
-            for x in range(x_size):
+    for a in numba.prange(n_axial):
+        for i1 in range(n_d1):
+            for i0 in range(n_d0):
                 # Build 3x3 symmetric tensor
                 tensor = np.empty((3, 3), dtype=np.float32)
                 for n, (i, j) in enumerate(symmetricComponents3d):
-                    tensor[i, j] = structure_tensor[n, z, y, x]
+                    tensor[i, j] = structure_tensor[n, a, i1, i0]
                     if i != j:
-                        tensor[j, i] = structure_tensor[n, z, y, x]
+                        tensor[j, i] = structure_tensor[n, a, i1, i0]
 
                 # Eigenvalue decomposition
                 w, v = np.linalg.eig(tensor)
@@ -2136,46 +2210,22 @@ def _compute_eigenvectors_numba(structure_tensor: np.ndarray, propagation_axis: 
                 lambda_max = w[max_idx]
                 anisotropy = (lambda_max - lambda_min) / (lambda_max + lambda_min + 1e-10)
 
-                # In skimage structure_tensor with (z,y,x) input, component order is (z,y,x)
-                # eigenvec[0]=z, eigenvec[1]=y, eigenvec[2]=x
-                ev_z = eigenvec[0]
-                ev_y = eigenvec[1]
-                ev_x = eigenvec[2]
+                # Eigenvector components: [v_axial, v_d1, v_d0] matching structure tensor axis order
+                v_axial = eigenvec[0]
+                v_d1 = eigenvec[1]
+                v_d0 = eigenvec[2]
 
-                # Normalize sign based on propagation axis
-                # Make the component along propagation axis positive
-                if propagation_axis == 0:  # X-axis propagation
-                    if ev_x < 0:
-                        ev_x = -ev_x
-                        ev_y = -ev_y
-                        ev_z = -ev_z
-                    # Output: [z, y, x, anisotropy] for YZ plane sampling
-                    # dim0=z, dim1=y in cross-section
-                    eigenvectors[0, z, y, x] = ev_z  # displacement in z (dim0)
-                    eigenvectors[1, z, y, x] = ev_y  # displacement in y (dim1)
-                    eigenvectors[2, z, y, x] = ev_x  # component along X (propagation axis)
-                elif propagation_axis == 1:  # Y-axis propagation
-                    if ev_y < 0:
-                        ev_x = -ev_x
-                        ev_y = -ev_y
-                        ev_z = -ev_z
-                    # Output: [x, z, y, anisotropy] for XZ plane sampling
-                    # dim0=x, dim1=z in cross-section
-                    eigenvectors[0, z, y, x] = ev_x  # displacement in x (dim0)
-                    eigenvectors[1, z, y, x] = ev_z  # displacement in z (dim1)
-                    eigenvectors[2, z, y, x] = ev_y  # component along Y (propagation axis)
-                else:  # Z-axis propagation (default)
-                    if ev_z < 0:
-                        ev_x = -ev_x
-                        ev_y = -ev_y
-                        ev_z = -ev_z
-                    # Output: [x, y, z, anisotropy] for XY plane sampling
-                    # dim0=x, dim1=y in cross-section
-                    eigenvectors[0, z, y, x] = ev_x  # displacement in x (dim0)
-                    eigenvectors[1, z, y, x] = ev_y  # displacement in y (dim1)
-                    eigenvectors[2, z, y, x] = ev_z  # component along Z (propagation axis)
+                # Normalize sign: make the axial component positive for consistent orientation
+                if v_axial < 0:
+                    v_d0 = -v_d0
+                    v_d1 = -v_d1
+                    v_axial = -v_axial
 
-                eigenvectors[3, z, y, x] = anisotropy
+                # Output: [v_d0, v_d1, v_axial, anisotropy] for cross-section sampling
+                eigenvectors[0, a, i1, i0] = v_d0    # displacement in d0 direction
+                eigenvectors[1, a, i1, i0] = v_d1    # displacement in d1 direction
+                eigenvectors[2, a, i1, i0] = v_axial # component along axial (propagation axis)
+                eigenvectors[3, a, i1, i0] = anisotropy
 
     return eigenvectors
 
@@ -2190,16 +2240,19 @@ def compute_orientation_volume(
     This function uses the eigenvector decomposition method consistent with fiber trajectory
     propagation, ensuring the orientation colors match between trajectory and volume views.
 
-    Fibers are assumed to be aligned along the Z-axis.
+    Array convention: (axial, d1, d0)
+        - axial: Fiber axis direction (propagation direction)
+        - d1: Cross-section first direction (row)
+        - d0: Cross-section second direction (column)
 
     Args:
-        structure_tensor: 4D array with shape (6, z, y, x) containing structure tensor components.
+        structure_tensor: 4D array with shape (6, axial, d1, d0) containing structure tensor components.
         status_callback: Optional callback function for status updates.
 
     Returns:
         Tuple of (tilt_volume, azimuth_volume):
-        - tilt_volume: 3D array (z, y, x) of tilt angles in degrees (0-90, angle from Z-axis)
-        - azimuth_volume: 3D array (z, y, x) of azimuth angles in degrees (0-360, direction in XY plane)
+        - tilt_volume: 3D array (axial, d1, d0) of tilt angles in degrees (0-90, angle from axial)
+        - azimuth_volume: 3D array (axial, d1, d0) of azimuth angles in degrees (0-360, direction in d0-d1 plane)
     """
     def _log(msg):
         if status_callback:
@@ -2209,28 +2262,23 @@ def compute_orientation_volume(
 
     _log("Computing orientation volume...")
 
-    # Use the same eigenvector computation as fiber trajectory propagation (Z-axis)
+    # Use the same eigenvector computation as fiber trajectory propagation
     eigenvectors = _compute_eigenvectors(structure_tensor)
 
-    # For Z-axis propagation (default):
-    # eigenvectors[0] = ev_x (x direction displacement)
-    # eigenvectors[1] = ev_y (y direction displacement)
-    # eigenvectors[2] = ev_z (z direction, along propagation axis)
-    # eigenvectors[3] = anisotropy
+    # Eigenvector output order: [v_d0, v_d1, v_axial, anisotropy]
+    ev_d0 = eigenvectors[0]    # Cross-section column direction
+    ev_d1 = eigenvectors[1]    # Cross-section row direction
+    ev_axial = eigenvectors[2] # Along propagation axis
 
-    ev_d0 = eigenvectors[0]  # First cross-section direction (x for Z-axis)
-    ev_d1 = eigenvectors[1]  # Second cross-section direction (y for Z-axis)
-    ev_axial = eigenvectors[2]  # Along propagation axis (z for Z-axis)
-
-    # Compute tilt angle (same as trajectory: angle from propagation axis)
-    # angles = arctan2(sqrt(v_d0^2 + v_d1^2), abs(v_axial))
+    # Compute tilt angle (angle from propagation axis)
+    # tilt = arctan2(sqrt(v_d0^2 + v_d1^2), abs(v_axial))
     tilt_volume = np.rad2deg(np.arctan2(
         np.sqrt(ev_d0**2 + ev_d1**2),
         np.abs(ev_axial)
     ))
 
-    # Compute azimuth angle (same as trajectory: direction in cross-section plane)
-    # azimuths = arctan2(v_d1, v_d0), converted to 0-360 range
+    # Compute azimuth angle (direction in cross-section plane)
+    # azimuth = arctan2(v_d1, v_d0), converted to 0-360 range
     azimuth_volume = np.rad2deg(np.arctan2(ev_d1, ev_d0))
     azimuth_volume = np.mod(azimuth_volume, 360)  # Convert to 0-360 range
 
@@ -2624,7 +2672,7 @@ def visualize_fiber_trajectories(
         PyVista Plotter object.
     """
     trajectories = fiber_trajectory.trajectories
-    angles = fiber_trajectory.angles
+    tilt_xz = fiber_trajectory.tilt_xz
     bounds = fiber_trajectory.bounds
 
     if len(trajectories) < 2:
@@ -2639,15 +2687,15 @@ def visualize_fiber_trajectories(
     for fiber_idx in range(n_fibers):
         # Collect points along this fiber's trajectory
         points = []
-        fiber_angles = []
+        fiber_tilt = []
 
         for slice_idx, (z, slice_points) in enumerate(trajectories):
             x = slice_points[fiber_idx, 0]
             y = slice_points[fiber_idx, 1]
             points.append([x, y, z])
 
-            if slice_idx < len(angles):
-                fiber_angles.append(angles[slice_idx][fiber_idx])
+            if slice_idx < len(tilt_xz):
+                fiber_tilt.append(tilt_xz[slice_idx][fiber_idx])
 
         points = np.array(points)
 
@@ -2659,12 +2707,12 @@ def visualize_fiber_trajectories(
 
         poly = pv.PolyData(points, lines=lines)
 
-        if color_by_angle and len(fiber_angles) > 0:
-            # Assign angle values to points
-            poly['angle'] = np.array(fiber_angles)
+        if color_by_angle and len(fiber_tilt) > 0:
+            # Assign tilt angle values to points
+            poly['tilt_xz'] = np.array(fiber_tilt)
             plotter.add_mesh(
                 poly,
-                scalars='angle',
+                scalars='tilt_xz',
                 cmap=cmap,
                 clim=angle_range,
                 line_width=line_width,
@@ -2681,7 +2729,7 @@ def visualize_fiber_trajectories(
     # Add scalar bar once
     if color_by_angle:
         plotter.add_scalar_bar(
-            title='Misalignment Angle (deg)',
+            title='Tilt X-Z (deg)',
             n_labels=5,
             position_x=0.85,
             width=0.1

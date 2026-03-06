@@ -415,11 +415,11 @@ def get_ribbon_button_style():
     return f"""
         QPushButton {{
             text-align: center;
-            padding: 2px;
+            padding: 3px 4px;
             border: 1px solid {c['border']};
             background-color: {c['bg_tertiary']};
             color: {c['text_primary']};
-            font-size: 9px;
+            font-size: 10px;
             border-radius: 3px;
         }}
         QPushButton:hover {{
@@ -501,7 +501,19 @@ def get_ribbon_stack_style():
 def get_ribbon_frame_style():
     """Get stylesheet for ribbon frames."""
     c = get_colors()
-    return f"QFrame {{ background-color: {c['bg_secondary']}; }}"
+    return f"""
+        QFrame {{ background-color: {c['bg_secondary']}; }}
+        QGroupBox {{
+            margin-top: 6px;
+            padding-top: 8px;
+            padding-bottom: 2px;
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 6px;
+            padding: 0 3px;
+        }}
+    """
 
 
 def get_splitter_style():
