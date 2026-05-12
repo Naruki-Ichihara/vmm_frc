@@ -599,6 +599,29 @@ class ScrollableRibbon(QScrollArea):
         self.setWidget(widget)
 
 
+def _normalize_hist_to_probability(n, patches):
+    """Convert frequency counts (returned by ax.hist with density=False) to
+    per-bin probability so that sum(n) == 1 and max(n) <= 1. Mutates the
+    matplotlib patch heights in-place. Returns the normalized array.
+
+    This replaces ``density=True`` (which produces a probability density
+    that can exceed 1 when bin widths are small).
+    """
+    total = float(np.asarray(n).sum())
+    if total > 0:
+        n = np.asarray(n, dtype=np.float64) / total
+        if len(patches) == 1 and hasattr(patches[0], 'get_xy'):
+            # stepfilled/step histtype returns a single Polygon instead of Rectangle list
+            poly = patches[0]
+            xy = poly.get_xy().copy()
+            xy[:, 1] = xy[:, 1] / total
+            poly.set_xy(xy)
+        else:
+            for patch, height in zip(patches, n):
+                patch.set_height(height)
+    return n
+
+
 class HistogramPanel(QWidget):
     def __init__(self):
         super().__init__()
@@ -700,7 +723,7 @@ class HistogramPanel(QWidget):
 
                 ax.set_title('Reference Orientation', fontsize=12)
                 ax.set_xlabel('Angle (degrees)', fontsize=10)
-                ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
+                ax.set_ylabel('Probability Density' if use_density else 'Frequency', fontsize=10)
                 ax.grid(True, alpha=0.3)
 
                 # Calculate statistics
@@ -756,7 +779,7 @@ class HistogramPanel(QWidget):
 
                 ax.set_title('Tilt d0 (d0-axial plane)', fontsize=12)
                 ax.set_xlabel('Angle (degrees)', fontsize=10)
-                ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
+                ax.set_ylabel('Probability Density' if use_density else 'Frequency', fontsize=10)
                 ax.grid(True, alpha=0.3)
 
                 # Calculate statistics
@@ -812,7 +835,7 @@ class HistogramPanel(QWidget):
 
                 ax.set_title('Tilt d1 (d1-axial plane)', fontsize=12)
                 ax.set_xlabel('Angle (degrees)', fontsize=10)
-                ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
+                ax.set_ylabel('Probability Density' if use_density else 'Frequency', fontsize=10)
                 ax.grid(True, alpha=0.3)
 
                 # Calculate statistics
@@ -988,7 +1011,7 @@ class HistogramPanel(QWidget):
             # Configure the subplot
             ax.set_title(orient_label, fontsize=12, fontweight='bold')
             ax.set_xlabel('Angle (degrees)', fontsize=10)
-            ax.set_ylabel('Density' if use_density else 'Frequency', fontsize=10)
+            ax.set_ylabel('Probability Density' if use_density else 'Frequency', fontsize=10)
             ax.grid(True, alpha=0.3)
             if max_count > 0:
                 ax.set_ylim(0, max_count * 1.1)  # Add 10% headroom
@@ -1246,7 +1269,7 @@ class HistogramPanel(QWidget):
                     hist_data = self.histogram_data[orientation_name]
 
                     writer.writerow([f'{orientation_name} Orientation Histogram:'])
-                    value_label = 'Density' if use_density else 'Count'
+                    value_label = 'Fraction' if use_density else 'Count'
                     writer.writerow(['Bin Center (degrees)', value_label])
 
                     # Calculate bin centers
@@ -1391,11 +1414,13 @@ class ModellingHistogramPanel(QWidget):
             n, bins, patches = ax.hist(data_flat, bins=config['bins'],
                                       range=hist_range, color=color,
                                       alpha=0.7, edgecolor='black',
-                                      density=use_density)
+                                      density=False)
+            if use_density:
+                n = _normalize_hist_to_probability(n, patches)
 
             ax.set_title(title, fontsize=10)
             ax.set_xlabel('Angle (°)', fontsize=9)
-            ax.set_ylabel('Density' if use_density else 'Freq', fontsize=9)
+            ax.set_ylabel('Fraction' if use_density else 'Freq', fontsize=9)
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=8)
 
@@ -1527,7 +1552,7 @@ class ModellingHistogramPanel(QWidget):
                     hist_data = self.histogram_data[orientation_name]
 
                     writer.writerow([f'{orientation_name} Orientation Histogram:'])
-                    value_label = 'Density' if use_density else 'Count'
+                    value_label = 'Fraction' if use_density else 'Count'
                     writer.writerow(['Bin Center (degrees)', value_label])
 
                     # Calculate bin centers
@@ -1699,36 +1724,80 @@ class Viewer2D(QWidget):
 
         main_splitter.addWidget(viewers_splitter)
 
-        # Bottom section: Dual Histograms (Intensity on left, Orientation on right)
-        self.figure_hist = Figure(figsize=(6, 2), facecolor=COLORS['bg_primary'])
+        # Bottom section: three orientation histograms (one per slice plane).
+        # Each plots the angle distribution within a slab of half-thickness ht
+        # centered on the corresponding slice — so they update as slices move.
+        self.figure_hist = Figure(figsize=(9, 2.2), facecolor=COLORS['bg_primary'])
         self.canvas_hist = FigureCanvas(self.figure_hist)
         self.canvas_hist.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.canvas_hist.setMinimumSize(200, 80)
+        self.canvas_hist.setMinimumSize(300, 80)
 
-        # Create two histogram axes side by side
-        # Left: Intensity histogram with colorbar
-        # [left, bottom, width, height] in figure coordinates (0-1)
-        self.ax_hist_intensity = self.figure_hist.add_axes([0.05, 0.20, 0.38, 0.65])
-        self.ax_hist_intensity.set_title('Intensity Histogram', fontsize=10, fontweight='bold')
-        self.ax_hist_intensity.set_xlabel('Intensity', fontsize=9)
-        self.ax_hist_intensity.set_ylabel('Density', fontsize=9)
-        self.ax_hist_intensity.set_xlim(0, 255)
-        self.ax_hist_intensity.grid(True, alpha=0.3)
+        # Three histogram axes side by side
+        self.ax_hist_axial = self.figure_hist.add_axes([0.05, 0.24, 0.27, 0.60])
+        self.ax_hist_d1    = self.figure_hist.add_axes([0.38, 0.24, 0.27, 0.60])
+        self.ax_hist_d0    = self.figure_hist.add_axes([0.71, 0.24, 0.27, 0.60])
+        for ax in (self.ax_hist_axial, self.ax_hist_d1, self.ax_hist_d0):
+            ax.set_xlabel('Angle (degrees)', fontsize=8)
+            ax.set_ylabel('Density (1/°)', fontsize=8)
+            ax.grid(True, alpha=0.3)
 
-        # Intensity colorbar axis
-        self.ax_hist_intensity_cbar = self.figure_hist.add_axes([0.44, 0.20, 0.01, 0.65])
+        # Compose canvas + a slim toolbar carrying the slab half-thickness control
+        hist_panel = QWidget()
+        hist_panel_layout = QVBoxLayout(hist_panel)
+        hist_panel_layout.setContentsMargins(0, 0, 0, 0)
+        hist_panel_layout.setSpacing(2)
 
-        # Right: Orientation histogram with colorbar
-        self.ax_hist_orientation = self.figure_hist.add_axes([0.52, 0.20, 0.38, 0.65])
-        self.ax_hist_orientation.set_title('Orientation Histogram', fontsize=10, fontweight='bold')
-        self.ax_hist_orientation.set_xlabel('Angle (degrees)', fontsize=9)
-        self.ax_hist_orientation.set_ylabel('Density', fontsize=9)
-        self.ax_hist_orientation.grid(True, alpha=0.3)
+        slab_bar = QWidget()
+        slab_bar_layout = QHBoxLayout(slab_bar)
+        slab_bar_layout.setContentsMargins(6, 2, 6, 2)
 
-        # Orientation colorbar axis
-        self.ax_hist_orientation_cbar = self.figure_hist.add_axes([0.91, 0.20, 0.01, 0.65])
+        slab_bar_layout.addWidget(QLabel("Slab half-thickness:"))
+        self.slab_halfthickness_spin = QSpinBox()
+        self.slab_halfthickness_spin.setRange(1, 500)
+        self.slab_halfthickness_spin.setValue(5)
+        self.slab_halfthickness_spin.setSuffix(" px")
+        self.slab_halfthickness_spin.setToolTip(
+            "Half-thickness (in pixels) of the slab around each slice plane "
+            "from which orientation histograms are computed. Total slab thickness = 2*ht+1."
+        )
+        self.slab_halfthickness_spin.valueChanged.connect(
+            lambda _v: self._renderOrientationHistogramsSlabs()
+        )
+        slab_bar_layout.addWidget(self.slab_halfthickness_spin)
 
-        main_splitter.addWidget(self.canvas_hist)
+        slab_bar_layout.addSpacing(12)
+        slab_bar_layout.addWidget(QLabel("Y-max:"))
+        self.hist_ymax_spin = QDoubleSpinBox()
+        self.hist_ymax_spin.setRange(0.0, 1.0e6)
+        self.hist_ymax_spin.setDecimals(4)
+        self.hist_ymax_spin.setSingleStep(0.01)
+        self.hist_ymax_spin.setValue(0.0)
+        self.hist_ymax_spin.setSpecialValueText("auto")
+        self.hist_ymax_spin.setToolTip(
+            "Fix the y-axis (density) upper limit for all three histograms. "
+            "Set to 0 / 'auto' to scale to data."
+        )
+        self.hist_ymax_spin.valueChanged.connect(
+            lambda _v: self._renderOrientationHistogramsSlabs()
+        )
+        slab_bar_layout.addWidget(self.hist_ymax_spin)
+
+        slab_bar_layout.addSpacing(12)
+        self.map2d_btn = QPushButton("2D Map…")
+        self.map2d_btn.setToolTip(
+            "Open a separate window showing the position-vs-angle 2D map "
+            "(rows = slab center position, cols = angle bin) for each slice "
+            "plane and each checked ROI. Uses the current slab half-thickness."
+        )
+        self.map2d_btn.clicked.connect(self._generate2DMap)
+        slab_bar_layout.addWidget(self.map2d_btn)
+
+        slab_bar_layout.addStretch()
+
+        hist_panel_layout.addWidget(slab_bar)
+        hist_panel_layout.addWidget(self.canvas_hist)
+
+        main_splitter.addWidget(hist_panel)
 
         # Set initial sizes: viewers = 60%, histogram = 40%
         main_splitter.setSizes([600, 400])
@@ -3088,6 +3157,9 @@ class Viewer2D(QWidget):
         else:
             vmin, vmax = 0, 255
 
+        # Crosshair style for showing the other two slice positions
+        ch_kw = dict(color='yellow', linestyle='--', linewidth=1.0, alpha=0.8)
+
         # Clear and render d0-d1 plane (XY plane, axial slice)
         # origin='upper' displays image as-is (row 0 at top)
         self.ax_xy.clear()
@@ -3096,6 +3168,9 @@ class Viewer2D(QWidget):
         self.ax_xy.imshow(slice_xy, cmap=self.colormap, origin='upper',
                          vmin=vmin, vmax=vmax, aspect='equal')
         self._setSquareAspect(self.ax_xy, slice_xy.shape)
+        # Crosshair: vertical at d0=slice_x (d1-axial cut), horizontal at d1=slice_y (d0-axial cut)
+        self.ax_xy.axvline(self.slice_x, **ch_kw)
+        self.ax_xy.axhline(self.slice_y, **ch_kw)
         self.ax_xy.set_title(f'd0-d1 Plane (axial={self.slice_z})', fontsize=10, fontweight='bold')
         self.ax_xy.set_xlabel('d0')
         self.ax_xy.set_ylabel('d1')
@@ -3108,6 +3183,9 @@ class Viewer2D(QWidget):
         self.ax_xz.imshow(slice_xz, cmap=self.colormap, origin='lower',
                          vmin=vmin, vmax=vmax, aspect='equal')
         self._setSquareAspectLower(self.ax_xz, slice_xz.shape)
+        # Crosshair: vertical at d0=slice_x (d1-axial cut), horizontal at axial=slice_z (d0-d1 cut)
+        self.ax_xz.axvline(self.slice_x, **ch_kw)
+        self.ax_xz.axhline(self.slice_z, **ch_kw)
         self.ax_xz.set_title(f'd0-axial Plane (d1={self.slice_y})', fontsize=10, fontweight='bold')
         self.ax_xz.set_xlabel('d0')
         self.ax_xz.set_ylabel('axial')
@@ -3120,6 +3198,9 @@ class Viewer2D(QWidget):
         self.ax_yz.imshow(slice_yz, cmap=self.colormap, origin='lower',
                          vmin=vmin, vmax=vmax, aspect='equal')
         self._setSquareAspectLower(self.ax_yz, slice_yz.shape)
+        # Crosshair: vertical at d1=slice_y (d0-axial cut), horizontal at axial=slice_z (d0-d1 cut)
+        self.ax_yz.axvline(self.slice_y, **ch_kw)
+        self.ax_yz.axhline(self.slice_z, **ch_kw)
         self.ax_yz.set_title(f'd1-axial Plane (d0={self.slice_x})', fontsize=10, fontweight='bold')
         self.ax_yz.set_xlabel('d1')
         self.ax_yz.set_ylabel('axial')
@@ -3139,10 +3220,177 @@ class Viewer2D(QWidget):
         # Draw ROI rectangles
         self._drawAllROIOverlays()
 
-        # Refresh only the slice canvases (not histograms)
+        # Refresh slice canvases
         self.canvas_xy.draw_idle()
         self.canvas_xz.draw_idle()
         self.canvas_yz.draw_idle()
+
+        # Recompute and redraw the per-plane orientation histograms (slabs
+        # follow the moving slices — this is the whole reason they exist)
+        self._renderOrientationHistogramsSlabs()
+
+    def _renderOrientationHistogramsSlabs(self):
+        """Render three orientation histograms — one per slice plane.
+
+        For each checked ROI, extract a slab of half-thickness ``ht`` (px)
+        around each of the three slice planes (axial, d1, d0) from the
+        ROI's selected orientation array (tilt_d0 / tilt_d1 / angle, set by
+        radio button), and plot the angle distribution. ROIs are overlaid
+        in their respective colors.
+        """
+        # All three axes start clean each call
+        ht = self.slab_halfthickness_spin.value()
+        axes = [self.ax_hist_axial, self.ax_hist_d1, self.ax_hist_d0]
+        titles = [
+            f'Slab around axial={self.slice_z}  (±{ht} px)',
+            f'Slab around d1={self.slice_y}  (±{ht} px)',
+            f'Slab around d0={self.slice_x}  (±{ht} px)',
+        ]
+        for ax, title in zip(axes, titles):
+            ax.clear()
+            ax.set_title(title, fontsize=9, fontweight='bold')
+            ax.set_xlabel('Angle (degrees)', fontsize=8)
+            ax.set_ylabel('Density (1/°)', fontsize=8)
+            ax.grid(True, alpha=0.3)
+
+        selected_rois = [
+            name for name, w in self.orientation_roi_widgets.items()
+            if w['check'].isChecked()
+        ]
+        if not selected_rois:
+            self.canvas_hist.draw_idle()
+            return
+
+        if self.orientation_range:
+            ori_vmin, ori_vmax = self.orientation_range
+            data_min_global, data_max_global = ori_vmin, ori_vmax
+        else:
+            data_min_global, data_max_global = float('inf'), float('-inf')
+
+        max_density = [0.0, 0.0, 0.0]
+        roi_colors = COLORS['roi_colors']
+
+        for roi_idx, roi_name in enumerate(selected_rois):
+            if roi_name not in self.rois:
+                continue
+            roi_data = self.rois[roi_name]
+            widgets = self.orientation_roi_widgets.get(roi_name)
+            if not widgets:
+                continue
+
+            if widgets['tilt_d0_radio'].isChecked():
+                otype, olabel = 'tilt_d0', 'Tilt d0'
+            elif widgets['tilt_d1_radio'].isChecked():
+                otype, olabel = 'tilt_d1', 'Tilt d1'
+            elif widgets['angle_radio'].isChecked():
+                otype, olabel = 'angle', 'Reference'
+            else:
+                continue
+
+            arr = roi_data.get(otype)
+            if arr is None:
+                continue
+
+            z_min, z_max, y_min, y_max, x_min, x_max = roi_data['bounds']
+            trim = roi_data.get('trim_width', 0)
+            nz, ny, nx = arr.shape
+
+            # Slice positions are in full-volume coords; orientation array is
+            # the trimmed sub-volume → map to local indices, clamp.
+            loc_z = self.slice_z - (z_min + trim)
+            loc_y = self.slice_y - (y_min + trim)
+            loc_x = self.slice_x - (x_min + trim)
+
+            za, zb = max(0, loc_z - ht), min(nz, loc_z + ht + 1)
+            ya, yb = max(0, loc_y - ht), min(ny, loc_y + ht + 1)
+            xa, xb = max(0, loc_x - ht), min(nx, loc_x + ht + 1)
+
+            slabs = [
+                arr[za:zb, :, :] if za < zb else None,
+                arr[:, ya:yb, :] if ya < yb else None,
+                arr[:, :, xa:xb] if xa < xb else None,
+            ]
+
+            color = roi_colors[roi_idx % len(roi_colors)]
+            label = f'{roi_name} ({olabel})'
+
+            for k, (ax, slab) in enumerate(zip(axes, slabs)):
+                if slab is None or slab.size == 0:
+                    continue
+                data = slab.ravel()
+                data = data[~np.isnan(data)]
+                if data.size == 0:
+                    continue
+
+                if self.orientation_range:
+                    rng = (ori_vmin, ori_vmax)
+                else:
+                    lo, hi = float(np.min(data)), float(np.max(data))
+                    data_min_global = min(data_min_global, lo)
+                    data_max_global = max(data_max_global, hi)
+                    rng = (lo, hi)
+
+                density_vals, bins = np.histogram(data, bins=180, range=rng, density=True)
+                if density_vals.sum() == 0:
+                    continue
+                bin_centers = (bins[:-1] + bins[1:]) / 2
+                max_density[k] = max(max_density[k], float(np.max(density_vals)))
+
+                ax.plot(bin_centers, density_vals, linewidth=1.6, color=color, label=label)
+                ax.fill_between(bin_centers, density_vals, alpha=0.3, color=color)
+
+        ymax_fixed = float(self.hist_ymax_spin.value())  # 0 → auto
+        if data_min_global != float('inf'):
+            for k, ax in enumerate(axes):
+                ax.set_xlim(data_min_global, data_max_global)
+                if ymax_fixed > 0:
+                    ax.set_ylim(0, ymax_fixed)
+                elif max_density[k] > 0:
+                    ax.set_ylim(0, max_density[k] * 1.1)
+                ax.legend(loc='upper right', fontsize=7)
+
+        self.canvas_hist.draw_idle()
+
+    def _generate2DMap(self):
+        """Open the orientation 2D-map dialog for the currently checked ROIs."""
+        selected_rois = [
+            n for n, w in self.orientation_roi_widgets.items()
+            if w['check'].isChecked()
+        ]
+        if not selected_rois:
+            QMessageBox.information(
+                self, "No ROI selected",
+                "Check at least one ROI (with computed orientation) "
+                "before generating the 2D map."
+            )
+            return
+
+        # Skip ROIs that have no orientation data yet
+        valid = [n for n in selected_rois if any(
+            self.rois.get(n, {}).get(t) is not None
+            for t in ('tilt_d0', 'tilt_d1', 'angle')
+        )]
+        if not valid:
+            QMessageBox.information(
+                self, "No orientation data",
+                "Run orientation analysis on the selected ROI(s) first."
+            )
+            return
+
+        dlg = OrientationMap2DDialog(
+            parent=self,
+            rois=self.rois,
+            selected_rois=valid,
+            orientation_widgets=self.orientation_roi_widgets,
+            half_thickness=self.slab_halfthickness_spin.value(),
+            n_bins=180,
+            orientation_range=self.orientation_range,
+        )
+        # Keep a reference so the non-modal dialog isn't garbage-collected
+        if not hasattr(self, '_open_2d_map_dialogs'):
+            self._open_2d_map_dialogs = []
+        self._open_2d_map_dialogs.append(dlg)
+        dlg.show()
 
     def renderVolume(self):
         """Render 2D slices of the volume"""
@@ -3154,8 +3402,9 @@ class Viewer2D(QWidget):
             self.ax_xy.clear()
             self.ax_xz.clear()
             self.ax_yz.clear()
-            self.ax_hist_intensity.clear()
-            self.ax_hist_orientation.clear()
+            self.ax_hist_axial.clear()
+            self.ax_hist_d1.clear()
+            self.ax_hist_d0.clear()
 
             # Get volume data
             if len(self.current_volume.shape) == 3:
@@ -3264,134 +3513,8 @@ class Viewer2D(QWidget):
             # Render void overlay if enabled
             self._renderVoidOverlay()
 
-            # Render dual histograms - intensity (left) and orientation (right)
-            import matplotlib.pyplot as plt
-            import matplotlib.cm as cm
-
-            # Always render intensity histogram on the left
-            self.ax_hist_intensity.clear()
-            self.ax_hist_intensity.set_title('Intensity Histogram', fontsize=10, fontweight='bold')
-            self.ax_hist_intensity.set_xlabel('Intensity', fontsize=9)
-            self.ax_hist_intensity.set_ylabel('Density', fontsize=9)
-            self.ax_hist_intensity.grid(True, alpha=0.3)
-
-            # Get intensity range
-            if self.intensity_range:
-                hist_vmin, hist_vmax = self.intensity_range
-            else:
-                hist_vmin, hist_vmax = 0, 255
-
-            # Render intensity histogram (density mode)
-            hist_data = volume.flatten()
-            density, bins = np.histogram(hist_data, bins=256, range=(hist_vmin, hist_vmax), density=True)
-            bin_centers = (bins[:-1] + bins[1:]) / 2
-
-            self.ax_hist_intensity.plot(bin_centers, density, linewidth=2, color='black')
-            self.ax_hist_intensity.fill_between(bin_centers, density, alpha=0.3, color='gray')
-            self.ax_hist_intensity.set_xlim(hist_vmin, hist_vmax)
-            self.ax_hist_intensity.set_ylim(bottom=0)
-
-            # Clear and update intensity colorbar
-            self.ax_hist_intensity_cbar.clear()
-            cmap = cm.get_cmap(self.colormap)
-            norm = plt.Normalize(vmin=hist_vmin, vmax=hist_vmax)
-            sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-            sm.set_array([])
-            self.figure_hist.colorbar(sm, cax=self.ax_hist_intensity_cbar, label='Intensity')
-
-            # Always render orientation histogram on the right
-            self.ax_hist_orientation.clear()
-            self.ax_hist_orientation.set_title('Orientation Histogram', fontsize=10, fontweight='bold')
-            self.ax_hist_orientation.set_xlabel('Angle (degrees)', fontsize=9)
-            self.ax_hist_orientation.set_ylabel('Density', fontsize=9)
-            self.ax_hist_orientation.grid(True, alpha=0.3)
-
-            # Collect all checked ROIs for histogram display
-            selected_rois = []
-            for roi_name, widgets in self.orientation_roi_widgets.items():
-                if widgets['check'].isChecked():
-                    selected_rois.append(roi_name)
-
-            if selected_rois:
-                # Show orientation histograms for all checked ROIs
-                # Get orientation range (custom or auto)
-                if self.orientation_range:
-                    ori_vmin, ori_vmax = self.orientation_range
-                    data_min_global = ori_vmin
-                    data_max_global = ori_vmax
-                else:
-                    data_min_global = float('inf')
-                    data_max_global = float('-inf')
-
-                max_count = 0
-
-                # Define colors for different ROIs
-                roi_colors = COLORS['roi_colors']
-
-                # Plot histogram for each checked ROI
-                for roi_idx, roi_name in enumerate(selected_rois):
-                    if roi_name not in self.rois:
-                        continue
-
-                    roi_data = self.rois[roi_name]
-                    widgets = self.orientation_roi_widgets.get(roi_name)
-                    if not widgets:
-                        continue
-
-                    # Determine which orientation type is selected (via radio buttons)
-                    orientation_type = None
-                    orientation_label = None
-                    if widgets['tilt_d0_radio'].isChecked():
-                        orientation_type = 'tilt_d0'
-                        orientation_label = 'Tilt d0'
-                    elif widgets['tilt_d1_radio'].isChecked():
-                        orientation_type = 'tilt_d1'
-                        orientation_label = 'Tilt d1'
-                    elif widgets['angle_radio'].isChecked():
-                        orientation_type = 'angle'
-                        orientation_label = 'Reference'
-
-                    if orientation_type and roi_data.get(orientation_type) is not None:
-                        hist_data = roi_data[orientation_type].flatten()
-
-                        # Use custom range or calculate from data
-                        if self.orientation_range:
-                            data_min, data_max = ori_vmin, ori_vmax
-                        else:
-                            data_min = np.nanmin(hist_data)
-                            data_max = np.nanmax(hist_data)
-                            data_min_global = min(data_min_global, data_min)
-                            data_max_global = max(data_max_global, data_max)
-
-                        density, bins = np.histogram(hist_data[~np.isnan(hist_data)], bins=180, range=(data_min, data_max), density=True)
-                        bin_centers = (bins[:-1] + bins[1:]) / 2
-                        max_count = max(max_count, np.max(density))
-
-                        # Use different color for each ROI
-                        color = roi_colors[roi_idx % len(roi_colors)]
-                        label = f'{roi_name} ({orientation_label})'
-
-                        self.ax_hist_orientation.plot(bin_centers, density, linewidth=2, color=color, label=label)
-                        self.ax_hist_orientation.fill_between(bin_centers, density, alpha=0.3, color=color)
-
-                # Set up axes if any histogram was plotted
-                if data_min_global != float('inf'):
-                    if len(selected_rois) > 1:
-                        self.ax_hist_orientation.set_title('Orientation Histograms - Multiple ROIs', fontsize=10, fontweight='bold')
-                    else:
-                        self.ax_hist_orientation.set_title(f'Orientation Histogram - {selected_rois[0]}', fontsize=10, fontweight='bold')
-
-                    self.ax_hist_orientation.set_xlim(data_min_global, data_max_global)
-                    self.ax_hist_orientation.set_ylim(0, max_count * 1.1)  # Add 10% headroom
-                    self.ax_hist_orientation.legend(loc='upper right', fontsize=8)
-
-                    # Clear and update orientation colorbar
-                    self.ax_hist_orientation_cbar.clear()
-                    cmap = cm.get_cmap(self.orientation_colormap)
-                    norm = plt.Normalize(vmin=data_min_global, vmax=data_max_global)
-                    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-                    sm.set_array([])
-                    self.figure_hist.colorbar(sm, cax=self.ax_hist_orientation_cbar, label='Angle')
+            # Render the per-plane orientation slab histograms
+            self._renderOrientationHistogramsSlabs()
 
             # If overlay mode, add orientation overlay
             if self.base_volume is not None and self.overlay_volume is not None:
@@ -8347,6 +8470,276 @@ class HistogramDialog(QDialog):
         return config
 
 
+class OrientationMap2DDialog(QDialog):
+    """Non-modal dialog showing orientation 2D maps (slab-center position vs
+    angle) for each slice plane and each selected ROI.
+
+    For axis k (axial / d1 / d0), each row of the map is the angle histogram
+    inside a slab of half-thickness ``ht`` centered on a particular position
+    along that axis. The map shape is therefore (n_pos, n_bins) per axis.
+    """
+    def __init__(self, parent, rois, selected_rois, orientation_widgets,
+                 half_thickness, n_bins, orientation_range):
+        super().__init__(parent)
+        self.setWindowTitle("Orientation 2D Maps  (slab center × angle)")
+        self.setModal(False)
+        self.resize(1200, max(400, 320 * len(selected_rois) + 80))
+
+        self.rois = rois
+        self.selected_rois = selected_rois
+        self.orientation_widgets = orientation_widgets
+        self.ht = int(half_thickness)
+        self.n_bins = int(n_bins)
+        self.orientation_range = orientation_range
+        self.maps_data = {}  # {roi_name: {'axial': ndarray, 'd1': ndarray, 'd0': ndarray, ...}}
+
+        layout = QVBoxLayout(self)
+
+        toolbar = QHBoxLayout()
+        info = QLabel(
+            f"Slab half-thickness: {self.ht} px  ·  Bins: {self.n_bins}  ·  "
+            f"ROIs: {len(self.selected_rois)}"
+        )
+        toolbar.addWidget(info)
+        toolbar.addStretch()
+        save_btn = QPushButton("Save (PNG + Excel)")
+        save_btn.clicked.connect(self._onSave)
+        toolbar.addWidget(save_btn)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        toolbar.addWidget(close_btn)
+        layout.addLayout(toolbar)
+
+        n_rows = len(self.selected_rois)
+        self.figure = Figure(figsize=(11.5, 3.0 * max(n_rows, 1)),
+                             facecolor=COLORS['bg_primary'])
+        self.canvas = FigureCanvas(self.figure)
+        layout.addWidget(self.canvas)
+
+        self._computeAndRender()
+
+    @staticmethod
+    def _mapAlongAxis(arr, axis, ht, n_bins, amin, amax):
+        """For each center index c along `axis`, compute the probability density
+        of the slab arr[c-ht:c+ht+1] (clamped) using density=True normalization.
+        Each row integrates to 1 (density × bin_width). Returns (n_pos, n_bins)."""
+        n = arr.shape[axis]
+        m = np.zeros((n, n_bins), dtype=np.float32)
+        for c in range(n):
+            a, b = max(0, c - ht), min(n, c + ht + 1)
+            if axis == 0:
+                slab = arr[a:b, :, :]
+            elif axis == 1:
+                slab = arr[:, a:b, :]
+            else:
+                slab = arr[:, :, a:b]
+            data = slab.ravel()
+            data = data[~np.isnan(data)]
+            if data.size == 0:
+                continue
+            density, _ = np.histogram(data, bins=n_bins, range=(amin, amax), density=True)
+            m[c, :] = density.astype(np.float32)
+        return m
+
+    def _computeAndRender(self):
+        n_rows = len(self.selected_rois)
+        if n_rows == 0:
+            return
+
+        for roi_idx, roi_name in enumerate(self.selected_rois):
+            roi_data = self.rois.get(roi_name)
+            wdg = self.orientation_widgets.get(roi_name)
+            if not roi_data or not wdg:
+                continue
+
+            if wdg['tilt_d0_radio'].isChecked():
+                otype, olabel = 'tilt_d0', 'Tilt d0'
+            elif wdg['tilt_d1_radio'].isChecked():
+                otype, olabel = 'tilt_d1', 'Tilt d1'
+            elif wdg['angle_radio'].isChecked():
+                otype, olabel = 'angle', 'Reference'
+            else:
+                continue
+
+            arr = roi_data.get(otype)
+            if arr is None:
+                continue
+
+            if self.orientation_range:
+                amin, amax = self.orientation_range
+            else:
+                valid = arr[~np.isnan(arr)]
+                if valid.size == 0:
+                    continue
+                amin, amax = float(np.min(valid)), float(np.max(valid))
+
+            # Compute per-axis maps
+            map_axial = self._mapAlongAxis(arr, 0, self.ht, self.n_bins, amin, amax)
+            map_d1    = self._mapAlongAxis(arr, 1, self.ht, self.n_bins, amin, amax)
+            map_d0    = self._mapAlongAxis(arr, 2, self.ht, self.n_bins, amin, amax)
+
+            # Origin offset to convert local indices to global slice positions
+            z_min, z_max, y_min, y_max, x_min, x_max = roi_data['bounds']
+            trim = roi_data.get('trim_width', 0)
+            origin_z = z_min + trim
+            origin_y = y_min + trim
+            origin_x = x_min + trim
+
+            self.maps_data[roi_name] = {
+                'axial': map_axial,
+                'd1': map_d1,
+                'd0': map_d0,
+                'amin': amin,
+                'amax': amax,
+                'origin': (origin_z, origin_y, origin_x),
+                'otype': otype,
+                'olabel': olabel,
+            }
+
+            for col_idx, (mp, axis_name, origin) in enumerate([
+                (map_axial, 'axial', origin_z),
+                (map_d1, 'd1', origin_y),
+                (map_d0, 'd0', origin_x),
+            ]):
+                ax = self.figure.add_subplot(n_rows, 3, roi_idx * 3 + col_idx + 1)
+                n_pos = mp.shape[0]
+                im = ax.imshow(
+                    mp,
+                    aspect='auto',
+                    origin='lower',
+                    extent=[amin, amax, origin, origin + n_pos],
+                    cmap='viridis',
+                    interpolation='nearest',
+                )
+
+                # Mode-ridge: angle of the most populated bin at each position
+                row_sums = mp.sum(axis=1)
+                valid = row_sums > 0
+                if valid.any():
+                    bin_edges = np.linspace(amin, amax, self.n_bins + 1)
+                    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+                    mode_angle = bin_centers[np.argmax(mp, axis=1)]
+                    y_pos = np.arange(n_pos, dtype=np.float64) + origin + 0.5
+                    # Break the line where rows are empty so we don't draw
+                    # spurious horizontal segments through gaps
+                    mode_x = np.where(valid, mode_angle, np.nan)
+                    ax.plot(mode_x, y_pos, color='red', linewidth=1.0,
+                            alpha=0.9, label='Mode')
+
+                ax.set_xlabel(f'{olabel} (degrees)')
+                ax.set_ylabel(f'{axis_name} center position (px)')
+                ax.set_title(f'{roi_name}: along {axis_name}')
+                self.figure.colorbar(im, ax=ax, label='Density (1/°)')
+
+        try:
+            self.figure.tight_layout()
+        except Exception:
+            pass
+        self.canvas.draw()
+
+    def _onSave(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save 2D maps", "orientation_2d_maps.png",
+            "PNG image (*.png);;All files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            self.figure.savefig(path, dpi=150, bbox_inches='tight',
+                                facecolor=self.figure.get_facecolor())
+        except Exception as e:
+            QMessageBox.critical(self, "Save failed", f"Could not save PNG:\n{e}")
+            return
+
+        # Also dump per-axis data to a single Excel workbook alongside the PNG
+        import os
+        import pandas as pd
+        base, _ = os.path.splitext(path)
+        xlsx_path = base + '.xlsx'
+        try:
+            with pd.ExcelWriter(xlsx_path, engine='openpyxl') as writer:
+                for roi_name, data in self.maps_data.items():
+                    amin, amax = data['amin'], data['amax']
+                    edges = np.linspace(amin, amax, self.n_bins + 1)
+                    centers = 0.5 * (edges[:-1] + edges[1:])
+                    safe_name = ''.join(c if c.isalnum() else '_' for c in roi_name)
+                    origin_z, origin_y, origin_x = data['origin']
+                    origins = {'axial': origin_z, 'd1': origin_y, 'd0': origin_x}
+
+                    for axis_name in ('axial', 'd1', 'd0'):
+                        mp = data[axis_name]  # (n_pos, n_bins)
+                        n_pos = mp.shape[0]
+                        positions = np.arange(n_pos, dtype=np.float64) + origins[axis_name]
+
+                        # Weighted statistics at each position along this axis.
+                        # mp stores probability density; multiply by bin_width to get
+                        # probability mass (sums to 1) for use as histogram weights.
+                        bin_width = (amax - amin) / self.n_bins
+                        row_sums = mp.sum(axis=1)
+                        mean_angle    = np.full(n_pos, np.nan)
+                        mode_angle    = np.full(n_pos, np.nan)
+                        median_angle  = np.full(n_pos, np.nan)
+                        std_angle     = np.full(n_pos, np.nan)
+                        variance_deg2 = np.full(n_pos, np.nan)
+                        skewness      = np.full(n_pos, np.nan)
+                        kurtosis      = np.full(n_pos, np.nan)
+                        for i in range(n_pos):
+                            if row_sums[i] > 0:
+                                w = mp[i].astype(np.float64) * bin_width
+                                mu  = float(np.dot(w, centers))
+                                var = float(np.dot(w, (centers - mu) ** 2))
+                                std = float(np.sqrt(var))
+                                mean_angle[i]    = mu
+                                variance_deg2[i] = var
+                                std_angle[i]     = std
+                                mode_angle[i]    = float(centers[int(np.argmax(w))])
+                                # Weighted median: interpolate CDF at 0.5
+                                cdf = np.cumsum(w)
+                                idx = int(np.searchsorted(cdf, 0.5))
+                                if idx == 0:
+                                    median_angle[i] = float(centers[0])
+                                elif idx >= len(centers):
+                                    median_angle[i] = float(centers[-1])
+                                else:
+                                    lo, hi = cdf[idx - 1], cdf[idx]
+                                    t = (0.5 - lo) / (hi - lo) if hi > lo else 0.5
+                                    median_angle[i] = float(
+                                        centers[idx - 1] + t * (centers[idx] - centers[idx - 1])
+                                    )
+                                if std > 0:
+                                    z = (centers - mu) / std
+                                    skewness[i] = float(np.dot(w, z ** 3))
+                                    kurtosis[i] = float(np.dot(w, z ** 4) - 3.0)
+
+                        df = pd.DataFrame({
+                            'position_px':  positions,
+                            'mean_deg':     mean_angle,
+                            'mode_deg':     mode_angle,
+                            'median_deg':   median_angle,
+                            'std_deg':      std_angle,
+                            'variance_deg2': variance_deg2,
+                            'skewness':     skewness,
+                            'kurtosis':     kurtosis,
+                        })
+                        for j, c in enumerate(centers):
+                            df[f'angle_{c:.3f}'] = mp[:, j].astype(float)
+
+                        # Excel sheet names are limited to 31 characters
+                        sheet_name = f"{safe_name}_{axis_name}"[:31]
+                        df.to_excel(writer, sheet_name=sheet_name, index=False)
+        except Exception as e:
+            QMessageBox.warning(self, "Excel save failed",
+                                f"PNG saved, but Excel export failed:\n{e}")
+            return
+
+        QMessageBox.information(
+            self, "Saved",
+            f"PNG saved to:\n{path}\n\n"
+            f"Excel data saved to:\n{xlsx_path}"
+        )
+
+
 class TrajectoryHistogramDialog(QDialog):
     """Dialog for configuring fiber trajectory angle histogram."""
     def __init__(self, visualization_tab):
@@ -8942,8 +9335,8 @@ class ExportDialog(QDialog):
                             'Max Fiber Misalignment (°)': settings.get('maximum_fiber_misalignment', 'N/A'),
                             'Fiber Misalignment Step (°)': settings.get('fiber_misalignment_step_size', 'N/A'),
                             # Strain Correction
-                            'Kink Width (mm)': settings.get('kink_width') if settings.get('kink_width') is not None else 'N/A',
-                            'Gauge Length (mm)': settings.get('gauge_length') if settings.get('gauge_length') is not None else 'N/A'
+                            'Kink Width (px)': settings.get('kink_width') if settings.get('kink_width') is not None else 'N/A',
+                            'Gauge Length (px)': settings.get('gauge_length') if settings.get('gauge_length') is not None else 'N/A'
                         })
                     df_params = pd.DataFrame(params_data)
                     df_params.to_excel(writer, sheet_name='Parameters', index=False)
@@ -9804,7 +10197,7 @@ class OrientationSettingsDialog(QDialog):
         tensor_layout = QFormLayout(tensor_group)
 
         self.noise_scale_spin = QSpinBox()
-        self.noise_scale_spin.setRange(1, 30)
+        self.noise_scale_spin.setRange(1, 2147483647)  # effectively unbounded (Qt int max)
         self.noise_scale_spin.setValue(self.settings['noise_scale'])
         self.noise_scale_spin.setToolTip(
             "Gaussian smoothing sigma for noise reduction.\n"
@@ -10203,19 +10596,19 @@ class SimulationSettingsDialog(QDialog):
         correction_layout.addRow(self.use_correction_check)
 
         self.kink_width_spin = QDoubleSpinBox()
-        self.kink_width_spin.setRange(0.001, 100)
-        self.kink_width_spin.setValue(self.settings.get('kink_width') or 0.1)  # Default 100 μm
-        self.kink_width_spin.setSuffix(" mm")
-        self.kink_width_spin.setDecimals(3)
-        self.kink_width_spin.setSingleStep(0.1)
+        self.kink_width_spin.setRange(0.1, 10000.0)
+        self.kink_width_spin.setValue(self.settings.get('kink_width') or 20.0)
+        self.kink_width_spin.setSuffix(" px")
+        self.kink_width_spin.setDecimals(1)
+        self.kink_width_spin.setSingleStep(1.0)
         correction_layout.addRow("Kink Width (w_k):", self.kink_width_spin)
 
         self.gauge_length_spin = QDoubleSpinBox()
-        self.gauge_length_spin.setRange(0.1, 1000)
-        self.gauge_length_spin.setValue(self.settings.get('gauge_length') or 10.0)
-        self.gauge_length_spin.setSuffix(" mm")
-        self.gauge_length_spin.setDecimals(2)
-        self.gauge_length_spin.setSingleStep(1.0)
+        self.gauge_length_spin.setRange(1.0, 100000.0)
+        self.gauge_length_spin.setValue(self.settings.get('gauge_length') or 100.0)
+        self.gauge_length_spin.setSuffix(" px")
+        self.gauge_length_spin.setDecimals(1)
+        self.gauge_length_spin.setSingleStep(10.0)
         correction_layout.addRow("Gauge Length (L_g):", self.gauge_length_spin)
 
         # Set initial enabled state based on checkbox
@@ -10265,8 +10658,8 @@ class SimulationSettingsDialog(QDialog):
         self.max_misalign_spin.setValue(20.0)
         self.misalign_step_spin.setValue(0.1)
         self.use_correction_check.setChecked(False)
-        self.kink_width_spin.setValue(0.1)  # 100 μm
-        self.gauge_length_spin.setValue(10.0)
+        self.kink_width_spin.setValue(20.0)
+        self.gauge_length_spin.setValue(100.0)
 
     def getSettings(self):
         """Return current settings"""

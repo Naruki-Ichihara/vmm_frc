@@ -41,6 +41,7 @@ dependencies = [
     "PySide6",
     "matplotlib",
     "Pillow",
+    "darkdetect"
 ]
 
 [project.optional-dependencies]
